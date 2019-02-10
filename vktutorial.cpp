@@ -1,6 +1,6 @@
+#define GLFW_INCLUDE_VULKAN
 #include "Glfwx/Glfwx.h"
 
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 
 #include <cstdlib>
@@ -23,29 +23,12 @@ public:
 private:
     int initializeWindow()
     {
-        window_ = new Glfwx::Window(WIDTH, HEIGHT, "vktutorial", nullptr, nullptr);
+        window_ = new Glfwx::Window(WIDTH, HEIGHT, "vktutorial");
         Glfwx::Window::hint(Glfwx::Hint::eCLIENT_API, Glfwx::eNO_API);
         Glfwx::Window::hint(Glfwx::Hint::eRESIZABLE, Glfwx::eFALSE);
         return window_->open();
     }
     void initVulkan()
-    {
-        createInstance();
-    }
-
-    void mainLoop()
-    {
-    }
-
-    void cleanup()
-    {
-        if (window_)
-            delete window_;
-    }
-
-private:
-
-    void createInstance()
     {
         vk::ApplicationInfo appInfo("Hello Triangle",
                                     VK_MAKE_VERSION(1, 0, 0),
@@ -58,14 +41,64 @@ private:
         createInfo.pApplicationInfo = &appInfo;
         createInfo.enabledExtensionCount = (int)requiredExtensions.size();
         createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-        instance_ = vk::createInstance(createInfo);
+        instance_ = vk::createInstanceUnique(createInfo);
+
+        if (VALIDATION_LAYERS_REQUESTED && !validationLayersSupported()) {
+            throw std::runtime_error("validation layers requested, but not available!");
+        }
     }
+
+    void mainLoop()
+    {
+    }
+
+    void cleanup()
+    {
+        instance_.reset();
+        if (window_)
+            delete window_;
+    }
+
+private:
 
     static int constexpr WIDTH  = 800;
     static int constexpr HEIGHT = 600;
 
-    Glfwx::Window * window_  = nullptr;
-    vk::Instance instance_;
+    bool validationLayersSupported()
+    {
+        std::vector<vk::LayerProperties> supported = vk::enumerateInstanceLayerProperties();
+        for (auto request = VALIDATION_LAYERS[0]; request; ++request)
+        {
+            bool found = false;
+            for (auto const & layer : supported)
+            {
+                if (strcmp(request, layer.layerName) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return false;
+        }
+        return true;
+    }
+
+#ifdef NDEBUG
+    static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
+#else
+    static bool constexpr VALIDATION_LAYERS_REQUESTED = true;
+#endif
+    static char const * const VALIDATION_LAYERS[];
+
+    Glfwx::Window * window_ = nullptr;
+    vk::UniqueInstance instance_;
+};
+
+char const * const HelloTriangleApplication::VALIDATION_LAYERS[] =
+{
+    "VK_LAYER_LUNARG_standard_validation",
+    nullptr
 };
 
 int main()
@@ -82,9 +115,9 @@ int main()
 
     try
     {
-        Glfwx::start();
+        Glfwx::init();
         app.run();
-        Glfwx::finish();
+        Glfwx::terminate();
     }
     catch (const std::exception & e)
     {
