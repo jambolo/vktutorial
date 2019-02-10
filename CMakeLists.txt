@@ -52,7 +52,7 @@ set(VKTUTORIAL_INCLUDE_PATHS
 )
 
 add_executable(vktutorial ${VKTUTORIAL_SOURCES})
-target_link_libraries(vktutorial glfw glm Vulkan::Vulkan)
+target_link_libraries(vktutorial glfw glm Vulkan::Vulkan Glfwx)
 target_compile_definitions(vktutorial
     PRIVATE
         -DNOMINMAX
@@ -68,3 +68,5 @@ if (BUILD_SHARED_LIBS)
     add_custom_command(TARGET vktutorial POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${glfw_LIBRARIES}/glfw3.dll" $<TARGET_FILE_DIR:vktutorial>)
 endif()
+
+add_subdirectory(Glfwx)

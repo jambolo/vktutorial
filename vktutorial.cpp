@@ -1,36 +1,96 @@
-#define GLFW_INCLUDE_VULKAN
+#include "Glfwx/Glfwx.h"
+
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan.hpp>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
+#include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <iostream>
+#include <stdexcept>
 
-int main() {
-    glfwInit();
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(800, 600, "vktutorial", nullptr, nullptr);
-
-    uint32_t extensionCount = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-    std::cout << extensionCount << " extensions supported" << std::endl;
-
-    glm::mat4 matrix;
-    glm::vec4 vec;
-    auto test = matrix * vec;
-
-    while(!glfwWindowShouldClose(window))
+class HelloTriangleApplication
+{
+public:
+    void run()
     {
-        glfwPollEvents();
+        initializeWindow();
+        initVulkan();
+        mainLoop();
+        cleanup();
     }
 
-    glfwDestroyWindow(window);
+private:
+    int initializeWindow()
+    {
+        window_ = new Glfwx::Window(WIDTH, HEIGHT, "vktutorial", nullptr, nullptr);
+        Glfwx::Window::hint(Glfwx::Hint::eCLIENT_API, Glfwx::eNO_API);
+        Glfwx::Window::hint(Glfwx::Hint::eRESIZABLE, Glfwx::eFALSE);
+        return window_->open();
+    }
+    void initVulkan()
+    {
+        createInstance();
+    }
 
-    glfwTerminate();
+    void mainLoop()
+    {
+    }
 
-    return 0;
+    void cleanup()
+    {
+        if (window_)
+            delete window_;
+    }
+
+private:
+
+    void createInstance()
+    {
+        vk::ApplicationInfo appInfo("Hello Triangle",
+                                    VK_MAKE_VERSION(1, 0, 0),
+                                    "No Engine",
+                                    VK_MAKE_VERSION(1, 0, 0),
+                                    VK_API_VERSION_1_0);
+
+        std::vector<char const *> requiredExtensions = Glfwx::requiredInstanceExtensions();
+        vk::InstanceCreateInfo    createInfo;
+        createInfo.pApplicationInfo = &appInfo;
+        createInfo.enabledExtensionCount = (int)requiredExtensions.size();
+        createInfo.ppEnabledExtensionNames = requiredExtensions.data();
+        instance_ = vk::createInstance(createInfo);
+    }
+
+    static int constexpr WIDTH  = 800;
+    static int constexpr HEIGHT = 600;
+
+    Glfwx::Window * window_  = nullptr;
+    vk::Instance instance_;
+};
+
+int main()
+{
+    {
+        std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties(nullptr);
+        std::cout << (int)extensions.size() << " extensions supported:" << std::endl;
+        for (auto const e : extensions)
+        {
+            std::cout << "\t" << e.extensionName << std::endl;
+        }
+    }
+    HelloTriangleApplication app;
+
+    try
+    {
+        Glfwx::start();
+        app.run();
+        Glfwx::finish();
+    }
+    catch (const std::exception & e)
+    {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }

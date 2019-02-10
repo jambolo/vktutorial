@@ -1,0 +1,3 @@
+[submodule "Glfwx"]
+	path = Glfwx
+	url = https://github.com/jambolo/Glfwx.git
