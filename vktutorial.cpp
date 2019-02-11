@@ -9,6 +9,17 @@
 #include <iostream>
 #include <stdexcept>
 
+#ifdef NDEBUG
+static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
+#else
+static bool constexpr VALIDATION_LAYERS_REQUESTED = true;
+#endif
+
+std::vector<char const *> const VALIDATION_LAYERS =
+{
+    "VK_LAYER_LUNARG_standard_validation",
+};
+
 class HelloTriangleApplication
 {
 public:
@@ -21,12 +32,6 @@ public:
     }
 
 private:
-
-#ifdef NDEBUG
-    static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
-#else
-    static bool constexpr VALIDATION_LAYERS_REQUESTED = true;
-#endif
 
     static int constexpr WIDTH  = 800;
     static int constexpr HEIGHT = 600;
@@ -76,16 +81,35 @@ private:
         createInfo.pApplicationInfo        = &appInfo;
         createInfo.enabledExtensionCount   = (uint32_t)requiredExtensions.size();
         createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-        instance_ = vk::createInstanceUnique(createInfo);
+        instance_ = vk::createInstance(createInfo);
 
-        dynamicLoader_.init(*instance_);
+        dynamicLoader_.init(instance_);
 
         if (VALIDATION_LAYERS_REQUESTED && !validationLayersAvailable())
             throw std::runtime_error("validation layers requested, but not available!");
 
         setupDebugMessenger();
 
-        vk::PhysicalDevice physicalDevice = firstSuitableDevice();
+        vk::PhysicalDevice physicalDevice = firstSuitablePhysicalDevice();
+        createLogicalDevice(physicalDevice);
+    }
+
+
+    void createLogicalDevice(vk::PhysicalDevice const & physicalDevice)
+    {
+            QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+            float priority = 1.0f;
+            vk::DeviceQueueCreateInfo  queueCreateInfo({}, indices.graphicsFamily, 1, &priority);
+            vk::PhysicalDeviceFeatures deviceFeatures;
+            vk::DeviceCreateInfo       createInfo({}, 1, &queueCreateInfo, 0, nullptr, 0, nullptr, &deviceFeatures);
+            if (VALIDATION_LAYERS_REQUESTED)
+            {
+                createInfo.setPpEnabledLayerNames(VALIDATION_LAYERS.data());
+                createInfo.setEnabledLayerCount(static_cast<uint32_t>(VALIDATION_LAYERS.size()));
+            }
+            device_ = physicalDevice.createDevice(createInfo);
+            graphicsQueue_ = device_.getQueue(indices.graphicsFamily, 0);
     }
 
     bool isSuitable(vk::PhysicalDevice const & device)
@@ -101,9 +125,9 @@ private:
         return findQueueFamilies(device).isComplete;
     }
 
-    vk::PhysicalDevice firstSuitableDevice()
+    vk::PhysicalDevice firstSuitablePhysicalDevice()
     {
-        std::vector<vk::PhysicalDevice> physicalDevices = instance_->enumeratePhysicalDevices();
+        std::vector<vk::PhysicalDevice> physicalDevices = instance_.enumeratePhysicalDevices();
         for (auto const & device : physicalDevices)
         {
             if (isSuitable(device))
@@ -119,8 +143,9 @@ private:
 
     void cleanup()
     {
-        messenger_.reset();
-        instance_.reset();
+        device_.destroy();
+        instance_.destroy(messenger_, nullptr, dynamicLoader_);
+        instance_.destroy();
         if (window_)
             delete window_;
     }
@@ -134,13 +159,13 @@ private:
             std::cout << "\t" << layer.layerName << std::endl;
         }
 
-        for (auto request = &VALIDATION_LAYERS[0]; *request; ++request)
+        for (auto const & request : VALIDATION_LAYERS)
         {
-            std::cout << "Requesting " << *request << ": ";
+            std::cout << "Requesting " << request << ": ";
             bool found = false;
             for (auto const & layer : available)
             {
-                if (strcmp(*request, layer.layerName) == 0)
+                if (strcmp(request, layer.layerName) == 0)
                 {
                     std::cout << "found" << std::endl;
                     found = true;
@@ -171,9 +196,8 @@ private:
                                                         VkDebugUtilsMessengerCallbackDataEXT const * pCallbackData,
                                                         void *                                       pUserData)
     {
-        std::cerr << "validation says: ("
-                  << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(messageSeverity))  << ") ["
-                  << vk::to_string(static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(messageTypes)) << "] - "
+        std::cerr << "(" << vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(messageSeverity))  << ")"
+                  << vk::to_string(static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(messageTypes)) << " - "
                   << pCallbackData->pMessage
                   << std::endl;
         return VK_FALSE;
@@ -183,33 +207,24 @@ private:
     {
         if (!VALIDATION_LAYERS_REQUESTED)
             return;
-        vk::DebugUtilsMessengerCreateInfoEXT info
-        {
-            {},
-            (vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
-             vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-             vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-             vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo),
-            (vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-             vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance),
-            debugCallback
-        };
-        messenger_ = instance_->createDebugUtilsMessengerEXTUnique(info, nullptr, dynamicLoader_);
+        vk::DebugUtilsMessengerCreateInfoEXT info({},
+                                                  (vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo),
+                                                  (vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                                                   vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                                                   vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance),
+                                                  debugCallback);
+        messenger_ = instance_.createDebugUtilsMessengerEXT(info, nullptr, dynamicLoader_);
     }
 
     Glfwx::Window * window_ = nullptr;
-    vk::UniqueInstance instance_;
-    vk::UniqueHandle<vk::DebugUtilsMessengerEXT, vk::DispatchLoaderDynamic> messenger_;
+    vk::Instance instance_;
     vk::DispatchLoaderDynamic dynamicLoader_;
-
-    static char const * const VALIDATION_LAYERS[];
-};
-
-char const * const HelloTriangleApplication::VALIDATION_LAYERS[] =
-{
-    "VK_LAYER_LUNARG_standard_validation",
-    nullptr
+    vk::DebugUtilsMessengerEXT messenger_;
+    vk::Device device_;
+    vk::Queue graphicsQueue_;
 };
 
 int main()
