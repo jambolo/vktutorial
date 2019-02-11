@@ -28,7 +28,7 @@ private:
     static bool constexpr VALIDATION_LAYERS_REQUESTED = true;
 #endif
 
-    static int constexpr WIDTH = 800;
+    static int constexpr WIDTH  = 800;
     static int constexpr HEIGHT = 600;
 
     struct QueueFamilyIndices
@@ -48,7 +48,7 @@ private:
             if (f.queueCount > 0 && f.queueFlags & vk::QueueFlagBits::eGraphics)
             {
                 indices.graphicsFamily = i;
-                indices.isComplete = true;
+                indices.isComplete     = true;
                 break;
             }
         }
@@ -93,12 +93,12 @@ private:
 //         bool suitable = false;
 //         vk::PhysicalDeviceProperties properties = device.getProperties();
 //         vk::PhysicalDeviceFeatures features = device.getFeatures();
-// 
+//
 //         if (properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && features.geometryShader)
 //             suitable = true;
-// 
-         return true;
-//        return findQueueFamilies(device).isComplete;
+//
+//         return suitable;
+        return findQueueFamilies(device).isComplete;
     }
 
     vk::PhysicalDevice firstSuitableDevice()
