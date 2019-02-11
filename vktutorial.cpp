@@ -8,6 +8,37 @@
 #include <iostream>
 #include <iostream>
 #include <stdexcept>
+#include <set>
+
+template <typename T>
+class optional
+{
+public:
+    optional() = default;
+    optional(T const & value) : value_(value), hasValue_(true)
+    {
+    }
+    optional & operator =(T const & rhs)
+    {
+        value_ = rhs;
+        hasValue_ = true;
+        return *this;
+    }
+    bool hasValue() const
+    {
+        return hasValue_;
+    }
+    T value() const
+    {
+        if (hasValue_)
+            return value_;
+        else
+            throw std::exception("bad_optional_access");
+    }
+private:
+    T value_;
+    bool hasValue_ = false;
+};
 
 #ifdef NDEBUG
 static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
@@ -38,8 +69,12 @@ private:
 
     struct QueueFamilyIndices
     {
-        uint32_t graphicsFamily;
-        bool isComplete = false;
+        optional<uint32_t> graphicsFamily;
+        optional<uint32_t> presentFamily;
+        bool isComplete() const
+        {
+            return graphicsFamily.hasValue() && presentFamily.hasValue();
+        }
     };
 
     QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice const & device)
@@ -51,11 +86,13 @@ private:
         {
             vk::QueueFamilyProperties const & f = families[i];
             if (f.queueCount > 0 && f.queueFlags & vk::QueueFlagBits::eGraphics)
-            {
                 indices.graphicsFamily = i;
-                indices.isComplete     = true;
+            VkBool32 presentSupport = device.getSurfaceSupportKHR(i, surface_);
+            if (f.queueCount > 0 && presentSupport)
+                indices.presentFamily = i;
+
+            if (indices.isComplete())
                 break;
-            }
         }
         return indices;
     }
@@ -90,7 +127,10 @@ private:
 
         setupDebugMessenger();
 
+        surface_ = window_->createSurface(instance_, nullptr);
+
         vk::PhysicalDevice physicalDevice = firstSuitablePhysicalDevice();
+
         createLogicalDevice(physicalDevice);
     }
 
@@ -99,17 +139,31 @@ private:
     {
             QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
+            // De-duplicate the family indices
+            std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+
             float priority = 1.0f;
-            vk::DeviceQueueCreateInfo  queueCreateInfo({}, indices.graphicsFamily, 1, &priority);
+            std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
+            for (auto const & i : uniqueQueueFamilies)
+            {
+                queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), i, 1, &priority);
+            }
+
             vk::PhysicalDeviceFeatures deviceFeatures;
-            vk::DeviceCreateInfo       createInfo({}, 1, &queueCreateInfo, 0, nullptr, 0, nullptr, &deviceFeatures);
+            vk::DeviceCreateInfo       createInfo({},
+                                                  (uint32_t)queueCreateInfos.size(), queueCreateInfos.data(),
+                                                  0, nullptr,
+                                                  0, nullptr,
+                                                  &deviceFeatures);
             if (VALIDATION_LAYERS_REQUESTED)
             {
                 createInfo.setPpEnabledLayerNames(VALIDATION_LAYERS.data());
                 createInfo.setEnabledLayerCount(static_cast<uint32_t>(VALIDATION_LAYERS.size()));
             }
+
             device_ = physicalDevice.createDevice(createInfo);
-            graphicsQueue_ = device_.getQueue(indices.graphicsFamily, 0);
+            graphicsQueue_ = device_.getQueue(indices.graphicsFamily.value(), 0);
+            presentQueue_ = device_.getQueue(indices.presentFamily.value(), 0);
     }
 
     bool isSuitable(vk::PhysicalDevice const & device)
@@ -122,7 +176,7 @@ private:
 //             suitable = true;
 //
 //         return suitable;
-        return findQueueFamilies(device).isComplete;
+        return findQueueFamilies(device).isComplete();
     }
 
     vk::PhysicalDevice firstSuitablePhysicalDevice()
@@ -135,19 +189,6 @@ private:
         }
 
         throw std::runtime_error("failed to find a suitable GPU!");
-    }
-
-    void mainLoop()
-    {
-    }
-
-    void cleanup()
-    {
-        device_.destroy();
-        instance_.destroy(messenger_, nullptr, dynamicLoader_);
-        instance_.destroy();
-        if (window_)
-            delete window_;
     }
 
     bool validationLayersAvailable()
@@ -219,12 +260,28 @@ private:
         messenger_ = instance_.createDebugUtilsMessengerEXT(info, nullptr, dynamicLoader_);
     }
 
+    void cleanup()
+    {
+        device_.destroy();
+        instance_.destroySurfaceKHR(surface_);
+        instance_.destroy(messenger_, nullptr, dynamicLoader_);
+        instance_.destroy();
+        if (window_)
+            delete window_;
+    }
+
+    void mainLoop()
+    {
+    }
+
     Glfwx::Window * window_ = nullptr;
     vk::Instance instance_;
     vk::DispatchLoaderDynamic dynamicLoader_;
     vk::DebugUtilsMessengerEXT messenger_;
     vk::Device device_;
     vk::Queue graphicsQueue_;
+    vk::Queue presentQueue_;
+    VkSurfaceKHR surface_;
 };
 
 int main()
