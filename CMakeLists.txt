@@ -27,10 +27,19 @@ target_compile_definitions(vktutorial
         -D_SCL_SECURE_NO_WARNINGS
 )
 target_include_directories(vktutorial PRIVATE ${VKTUTORIAL_INCLUDE_PATHS})
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
-if (BUILD_SHARED_LIBS)
+# Copy the DLLs to next to the executable
+if (WIN32 AND BUILD_SHARED_LIBS)
+    find_path(glfw3_DIR "lib/glfw3.lib" PATHS "C:/Program Files/glfw" CACHE)
+    if (glfw3_DIR)
+        set(glfw3_LIBRARIES "${glfw3_DIR}/lib")
+    else()
+        message(WARNING "glfw3 was not found.")
+    endif()
     add_custom_command(TARGET vktutorial POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${glfw_LIBRARIES}/glfw3.dll" $<TARGET_FILE_DIR:vktutorial>)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${glfw3_LIBRARIES}/glfw3.dll" $<TARGET_FILE_DIR:vktutorial>)
 endif()
 
 add_subdirectory(Glfwx)
