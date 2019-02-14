@@ -28,7 +28,7 @@ target_compile_definitions(vktutorial
 )
 target_include_directories(vktutorial PRIVATE ${VKTUTORIAL_INCLUDE_PATHS})
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
 # Copy the DLLs to next to the executable
 if (WIN32 AND BUILD_SHARED_LIBS)
