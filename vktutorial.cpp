@@ -145,6 +145,7 @@ private:
         vk::PhysicalDevice physicalDevice = firstSuitablePhysicalDevice();
         createLogicalDevice(physicalDevice);
         createSwapChain(physicalDevice);
+        createImageViews();
     }
 
     std::vector<char const *> myRequiredExtensions()
@@ -351,13 +352,13 @@ private:
             createInfo.imageSharingMode = vk::SharingMode::eExclusive;
         }
         createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-        createInfo.presentMode = presentMode;
-        createInfo.clipped = VK_TRUE;
+        createInfo.presentMode  = presentMode;
+        createInfo.clipped      = VK_TRUE;
 
-        swapChain_ = device_.createSwapchainKHR(createInfo);
-        swapChainImages_ = device_.getSwapchainImagesKHR(swapChain_);
+        swapChain_            = device_.createSwapchainKHR(createInfo);
+        swapChainImages_      = device_.getSwapchainImagesKHR(swapChain_);
         swapChainImageFormat_ = surfaceFormat.format;
-        swapChainExtent_ = extent;
+        swapChainExtent_      = extent;
     }
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const & available)
@@ -412,8 +413,29 @@ private:
             return { width, height };
         }
     }
+
+    void createImageViews()
+    {
+        vk::ImageSubresourceRange subresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        swapChainImageViews_.reserve(swapChainImages_.size());
+        for (auto const & image : swapChainImages_)
+        {
+            vk::ImageViewCreateInfo createInfo(vk::ImageViewCreateFlags(),
+                                               image,
+                                               vk::ImageViewType::e2D,
+                                               swapChainImageFormat_,
+                                               vk::ComponentMapping(),
+                                               subresourceRange);
+            swapChainImageViews_.push_back(device_.createImageView(createInfo));
+        }
+    }
+
     void cleanup()
     {
+        for (auto const & imageView : swapChainImageViews_)
+        {
+            device_.destroy(imageView);
+        }
         device_.destroy(swapChain_);
         device_.destroy();
         instance_.destroy(surface_);
@@ -437,6 +459,7 @@ private:
     vk::SurfaceKHR surface_;
     vk::SwapchainKHR swapChain_;
     std::vector<vk::Image> swapChainImages_;
+    std::vector<vk::ImageView> swapChainImageViews_;
     vk::Format swapChainImageFormat_;
     vk::Extent2D swapChainExtent_;
 };
