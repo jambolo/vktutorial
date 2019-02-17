@@ -1,10 +1,12 @@
 #define GLFW_INCLUDE_VULKAN
 #include "Glfwx/Glfwx.h"
+#include "Vkx/Vkx.h"
 
 #include <vulkan/vulkan.hpp>
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <set>
@@ -56,28 +58,6 @@ std::vector<char const *> const DEVICE_EXTENSIONS =
 {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
-
-static bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, char const * name)
-{
-    std::vector<vk::ExtensionProperties>::const_iterator i = std::find_if(extensions.begin(),
-                                                                          extensions.end(),
-                                                                          [name] (vk::ExtensionProperties const & e) {
-                                                                              return strcmp(name, e.extensionName) == 0;
-                                                                          });
-
-    return i != extensions.end();
-}
-
-static bool layerIsAvailable(std::vector<vk::LayerProperties> layers, char const * name)
-{
-    std::vector<vk::LayerProperties>::const_iterator i = std::find_if(layers.begin(),
-                                                                      layers.end(),
-                                                                      [name] (vk::LayerProperties const & e) {
-                                                                          return strcmp(name, e.layerName) == 0;
-                                                                      });
-
-    return i != layers.end();
-}
 
 class HelloTriangleApplication
 {
@@ -146,6 +126,7 @@ private:
         createLogicalDevice(physicalDevice);
         createSwapChain(physicalDevice);
         createImageViews();
+        createGraphicsPipeline();
     }
 
     std::vector<char const *> myRequiredExtensions()
@@ -170,7 +151,7 @@ private:
         for (auto const & request : VALIDATION_LAYERS)
         {
             std::cout << "Requesting " << request << ": ";
-            if (!layerIsAvailable(available, request))
+            if (!Vkx::layerIsAvailable(available, request))
             {
                 std::cout << "not found" << std::endl;
                 return false;
@@ -247,7 +228,7 @@ private:
         for (auto const & required : DEVICE_EXTENSIONS)
         {
             std::cout << "Requiring " << required << ": ";
-            if (!extensionIsSupported(available, required))
+            if (!Vkx::extensionIsSupported(available, required))
             {
                 std::cout << "not found" << std::endl;
                 return false;
@@ -430,8 +411,66 @@ private:
         }
     }
 
+    void createGraphicsPipeline()
+    {
+        vk::ShaderModule vertShaderModule = Vkx::loadShaderModule("shaders/shader.vert.spv", device_);
+        vk::ShaderModule fragShaderModule = Vkx::loadShaderModule("shaders/shader.frag.spv", device_);
+
+        vk::PipelineShaderStageCreateInfo vertShaderStageInfo(vk::PipelineShaderStageCreateFlags(),
+                                                              vk::ShaderStageFlagBits::eVertex,
+                                                              vertShaderModule,
+                                                              "main");
+
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly(vk::PipelineInputAssemblyStateCreateFlags(),
+                                                               vk::PrimitiveTopology::eTriangleList,
+                                                               VK_FALSE);
+
+        vk::PipelineShaderStageCreateInfo fragShaderStageInfo(vk::PipelineShaderStageCreateFlags(),
+                                                              vk::ShaderStageFlagBits::eFragment,
+                                                              fragShaderModule,
+                                                              "main");
+
+        vk::Viewport viewport(0.0f, 0.0f, (float)swapChainExtent_.width, (float)swapChainExtent_.height, 0.0f, 1.0f);
+        vk::Rect2D   scissor({ 0, 0 }, swapChainExtent_);
+        vk::PipelineViewportStateCreateInfo viewportState(vk::PipelineViewportStateCreateFlags(), 1, &viewport, 1, &scissor);
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer(vk::PipelineRasterizationStateCreateFlags(),
+                                                            VK_FALSE,
+                                                            VK_FALSE,
+                                                            vk::PolygonMode::eFill,
+                                                            vk::CullModeFlagBits::eBack,
+                                                            vk::FrontFace::eClockwise);
+
+        vk::PipelineMultisampleStateCreateInfo multisampling;
+
+//         vk::PipelineColorBlendAttachmentState colorBlendAttachment(VK_TRUE,
+//                                                                    vk::BlendFactor::eSrcAlpha,
+//                                                                    vk::BlendFactor::eOneMinusSrcAlpha,
+//                                                                    vk::BlendOp::eAdd,
+//                                                                    vk::BlendFactor::eOne,
+//                                                                    vk::BlendFactor::eZero,
+//                                                                    vk::BlendOp::eAdd,
+//                                                                    vk::ColorComponentFlags(
+//                                                                        vk::FlagTraits<vk::ColorComponentFlags>::allFlags));
+        vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+        colorBlendAttachment.setColorWriteMask(vk::ColorComponentFlags(vk::FlagTraits<vk::ColorComponentFlags>::allFlags));
+
+        vk::PipelineColorBlendStateCreateInfo colorBlending;
+        colorBlending.setPAttachments(&colorBlendAttachment);
+        colorBlending.setAttachmentCount(1);
+
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
+        pipelineLayout_ = device_.createPipelineLayout(pipelineLayoutInfo);
+
+        device_.destroy(fragShaderModule);
+        device_.destroy(vertShaderModule);
+    }
+
     void cleanup()
     {
+        device_.destroy(pipelineLayout_);
         for (auto const & imageView : swapChainImageViews_)
         {
             device_.destroy(imageView);
@@ -462,6 +501,7 @@ private:
     std::vector<vk::ImageView> swapChainImageViews_;
     vk::Format swapChainImageFormat_;
     vk::Extent2D swapChainExtent_;
+    vk::PipelineLayout pipelineLayout_;
 };
 
 int main()
