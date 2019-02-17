@@ -15,8 +15,14 @@ set(VKTUTORIAL_INCLUDE_PATHS
     .
 )
 
+set(VKTUTORIAL_SHADER_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert
+)
+source_group(Shaders FILES ${VKTUTORIAL_SHADER_SOURCES})
+
 add_executable(vktutorial ${VKTUTORIAL_SOURCES})
-target_link_libraries(vktutorial glm Vulkan::Vulkan Glfwx)
+target_link_libraries(vktutorial glm Vulkan::Vulkan Glfwx Vkx)
 target_compile_definitions(vktutorial
     PRIVATE
         -DNOMINMAX
@@ -42,4 +48,31 @@ if (WIN32 AND BUILD_SHARED_LIBS)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${glfw3_LIBRARIES}/glfw3.dll" $<TARGET_FILE_DIR:vktutorial>)
 endif()
 
+# Compile the shaders if necessary
+foreach(GLSL ${VKTUTORIAL_SHADER_SOURCES})
+    get_filename_component(FILE_NAME ${GLSL} NAME)
+    set(SPIRV "${PROJECT_BINARY_DIR}/shaders/${FILE_NAME}.spv")
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/shaders/"
+        COMMAND glslangValidator.exe -V ${GLSL} -o ${SPIRV}
+        DEPENDS ${GLSL})
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+
+add_custom_target(
+    shaders 
+    DEPENDS ${SPIRV_BINARY_FILES}
+    )
+
+add_dependencies(vktutorial shaders)
+
+add_custom_command(TARGET vktutorial POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:vktutorial>/shaders/"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_BINARY_DIR}/shaders"
+        "$<TARGET_FILE_DIR:vktutorial>/shaders"
+        )
+
 add_subdirectory(Glfwx)
+add_subdirectory(Vkx)
