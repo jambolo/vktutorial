@@ -117,7 +117,7 @@ private:
 
         dynamicLoader_.init(instance_);
 
-        if (VALIDATION_LAYERS_REQUESTED && !allValidationLayersAvailable())
+        if (VALIDATION_LAYERS_REQUESTED && !Vkx::allLayersAvailable(VALIDATION_LAYERS))
             throw std::runtime_error("validation layers requested, but not available!");
 
         setupDebugMessenger();
@@ -126,7 +126,9 @@ private:
         createLogicalDevice(physicalDevice);
         createSwapChain(physicalDevice);
         createImageViews();
+        createRenderPass();
         createGraphicsPipeline();
+        createFrameBuffers();
     }
 
     std::vector<char const *> myRequiredExtensions()
@@ -137,28 +139,6 @@ private:
             requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         return requiredExtensions;
-    }
-
-    bool allValidationLayersAvailable()
-    {
-        std::vector<vk::LayerProperties> available = vk::enumerateInstanceLayerProperties();
-        std::cout << available.size() << " layers available:" << std::endl;
-        for (auto const & layer : available)
-        {
-            std::cout << "\t" << layer.layerName << std::endl;
-        }
-
-        for (auto const & request : VALIDATION_LAYERS)
-        {
-            std::cout << "Requesting " << request << ": ";
-            if (!Vkx::layerIsAvailable(available, request))
-            {
-                std::cout << "not found" << std::endl;
-                return false;
-            }
-            std::cout << "found" << std::endl;
-        }
-        return true;
     }
 
     void setupDebugMessenger()
@@ -212,7 +192,7 @@ private:
 //
 //         return suitable;
         QueueFamilyIndices indices = findQueueFamilies(device);
-        bool extensionsSupported   = allExtensionsSupported(device);
+        bool extensionsSupported   = Vkx::allExtensionsSupported(device, DEVICE_EXTENSIONS);
         bool swapChainAdequate     = false;
         if (extensionsSupported)
         {
@@ -220,22 +200,6 @@ private:
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
         return indices.isComplete() && extensionsSupported && swapChainAdequate;
-    }
-
-    bool allExtensionsSupported(vk::PhysicalDevice device) const
-    {
-        std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties(nullptr);
-        for (auto const & required : DEVICE_EXTENSIONS)
-        {
-            std::cout << "Requiring " << required << ": ";
-            if (!Vkx::extensionIsSupported(available, required))
-            {
-                std::cout << "not found" << std::endl;
-                return false;
-            }
-            std::cout << "found" << std::endl;
-        }
-        return true;
     }
 
     SwapChainSupportInfo querySwapChainSupport(vk::PhysicalDevice device)
@@ -411,6 +375,29 @@ private:
         }
     }
 
+    void createRenderPass()
+    {
+        vk::AttachmentDescription colorAttachment(vk::AttachmentDescriptionFlags(),
+                                                  swapChainImageFormat_,
+                                                  vk::SampleCountFlagBits::e1,
+                                                  vk::AttachmentLoadOp::eClear,
+                                                  vk::AttachmentStoreOp::eStore,
+                                                  vk::AttachmentLoadOp::eDontCare,
+                                                  vk::AttachmentStoreOp::eDontCare,
+                                                  vk::ImageLayout::eUndefined,
+                                                  vk::ImageLayout::ePresentSrcKHR);
+
+        vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
+        vk::SubpassDescription  subpass(vk::SubpassDescriptionFlags(),
+                                        vk::PipelineBindPoint::eGraphics,
+                                        1,
+                                        &colorAttachmentRef);
+
+        vk::RenderPassCreateInfo renderPassInfo(vk::RenderPassCreateFlags(),
+                                                1, &colorAttachment, 1, &subpass);
+        renderPass_ = device_.createRenderPass(renderPassInfo);
+    }
+
     void createGraphicsPipeline()
     {
         vk::ShaderModule vertShaderModule = Vkx::loadShaderModule("shaders/shader.vert.spv", device_);
@@ -431,6 +418,8 @@ private:
                                                               vk::ShaderStageFlagBits::eFragment,
                                                               fragShaderModule,
                                                               "main");
+
+        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
         vk::Viewport viewport(0.0f, 0.0f, (float)swapChainExtent_.width, (float)swapChainExtent_.height, 0.0f, 1.0f);
         vk::Rect2D   scissor({ 0, 0 }, swapChainExtent_);
@@ -464,13 +453,56 @@ private:
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
         pipelineLayout_ = device_.createPipelineLayout(pipelineLayoutInfo);
 
+        vk::GraphicsPipelineCreateInfo pipelineInfo(vk::PipelineCreateFlags(),
+                                                    2,
+                                                    shaderStages,
+                                                    &vertexInputInfo,
+                                                    &inputAssembly,
+                                                    nullptr,
+                                                    &viewportState,
+                                                    &rasterizer,
+                                                    &multisampling,
+                                                    nullptr,
+                                                    &colorBlending,
+                                                    nullptr,
+                                                    pipelineLayout_,
+                                                    renderPass_,
+                                                    0);
+        graphicsPipelines_ = device_.createGraphicsPipelines(vk::PipelineCache(), pipelineInfo);
+
         device_.destroy(fragShaderModule);
         device_.destroy(vertShaderModule);
     }
 
+    void createFrameBuffers()
+    {
+        swapChainFramebuffers_.reserve(swapChainImageViews_.size());
+        for (auto const & view : swapChainImageViews_)
+        {
+            vk::FramebufferCreateInfo framebufferInfo(vk::FramebufferCreateFlags(),
+                                                      renderPass_,
+                                                      1,
+                                                      &view,
+                                                      swapChainExtent_.width,
+                                                      swapChainExtent_.height,
+                                                      1);
+
+            swapChainFramebuffers_.push_back(device_.createFramebuffer(framebufferInfo));
+        }
+    }
+
     void cleanup()
     {
+        for (auto const & framebuffer : swapChainFramebuffers_)
+        {
+            device_.destroy(framebuffer);
+        }
+        for (auto const & pipeline : graphicsPipelines_)
+        {
+            device_.destroy(pipeline);
+        }
         device_.destroy(pipelineLayout_);
+        device_.destroy(renderPass_);
         for (auto const & imageView : swapChainImageViews_)
         {
             device_.destroy(imageView);
@@ -501,7 +533,10 @@ private:
     std::vector<vk::ImageView> swapChainImageViews_;
     vk::Format swapChainImageFormat_;
     vk::Extent2D swapChainExtent_;
+    vk::RenderPass renderPass_;
     vk::PipelineLayout pipelineLayout_;
+    std::vector<vk::Pipeline> graphicsPipelines_;
+    std::vector<vk::Framebuffer> swapChainFramebuffers_;
 };
 
 int main()
