@@ -12,37 +12,6 @@
 #include <set>
 #include <stdexcept>
 
-template <typename T>
-class optional
-{
-public:
-    optional() = default;
-    optional(T const & value) : value_(value)
-        , hasValue_(true)
-    {
-    }
-    optional & operator =(T const & rhs)
-    {
-        value_    = rhs;
-        hasValue_ = true;
-        return *this;
-    }
-    bool hasValue() const
-    {
-        return hasValue_;
-    }
-    T value() const
-    {
-        if (hasValue_)
-            return value_;
-        else
-            throw std::exception("bad_optional_access");
-    }
-private:
-    T value_;
-    bool hasValue_ = false;
-};
-
 #ifdef NDEBUG
 static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
 #else
@@ -75,16 +44,6 @@ private:
     static int constexpr WIDTH  = 800;
     static int constexpr HEIGHT = 600;
 
-    struct QueueFamilyIndices
-    {
-        optional<uint32_t> graphicsFamily;
-        optional<uint32_t> presentFamily;
-        bool isComplete() const
-        {
-            return graphicsFamily.hasValue() && presentFamily.hasValue();
-        }
-    };
-
     struct SwapChainSupportInfo
     {
         vk::SurfaceCapabilitiesKHR capabilities;
@@ -109,11 +68,14 @@ private:
                                     VK_API_VERSION_1_0);
 
         std::vector<char const *> requiredExtensions = myRequiredExtensions();
-        vk::InstanceCreateInfo    createInfo;
-        createInfo.pApplicationInfo        = &appInfo;
-        createInfo.enabledExtensionCount   = (uint32_t)requiredExtensions.size();
-        createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-        instance_ = vk::createInstance(createInfo);
+        instance_ = vk::createInstance(
+            vk::InstanceCreateInfo(
+                vk::InstanceCreateFlags(),
+                &appInfo,
+                0,
+                nullptr,
+                (uint32_t)requiredExtensions.size(),
+                requiredExtensions.data()));
 
         dynamicLoader_.init(instance_);
 
@@ -129,6 +91,9 @@ private:
         createRenderPass();
         createGraphicsPipeline();
         createFrameBuffers();
+        createCommandPool(physicalDevice);
+        createCommandBuffers();
+        createSemaphores();
     }
 
     std::vector<char const *> myRequiredExtensions()
@@ -145,11 +110,10 @@ private:
     {
         if (!VALIDATION_LAYERS_REQUESTED)
             return;
-        vk::DebugUtilsMessengerCreateInfoEXT info({},
+        vk::DebugUtilsMessengerCreateInfoEXT info(vk::DebugUtilsMessengerCreateFlagsEXT(),
                                                   (vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
                                                    vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo),
+                                                   vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose),
                                                   (vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
                                                    vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
                                                    vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance),
@@ -191,15 +155,18 @@ private:
 //             suitable = true;
 //
 //         return suitable;
-        QueueFamilyIndices indices = findQueueFamilies(device);
-        bool extensionsSupported   = Vkx::allExtensionsSupported(device, DEVICE_EXTENSIONS);
-        bool swapChainAdequate     = false;
+        uint32_t graphicsFamily;
+        uint32_t presentFamily;
+        if (!findQueueFamilies(device, graphicsFamily, presentFamily))
+            return false;
+        bool extensionsSupported = Vkx::allExtensionsSupported(device, DEVICE_EXTENSIONS);
+        bool swapChainAdequate   = false;
         if (extensionsSupported)
         {
             SwapChainSupportInfo swapChainSupport = querySwapChainSupport(device);
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
-        return indices.isComplete() && extensionsSupported && swapChainAdequate;
+        return extensionsSupported && swapChainAdequate;
     }
 
     SwapChainSupportInfo querySwapChainSupport(vk::PhysicalDevice device)
@@ -214,23 +181,22 @@ private:
 
     void createLogicalDevice(vk::PhysicalDevice const & physicalDevice)
     {
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-
-        // De-duplicate the family indices
-        std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+        findQueueFamilies(physicalDevice, graphicsFamily_, presentFamily_);
 
         float priority = 1.0f;
         std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
-        for (auto const & i : uniqueQueueFamilies)
-        {
-            queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), i, 1, &priority);
-        }
+        queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), graphicsFamily_, 1, &priority);
+        if (graphicsFamily_ != presentFamily_)
+            queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), presentFamily_, 1, &priority);
 
         vk::PhysicalDeviceFeatures deviceFeatures;
-        vk::DeviceCreateInfo       createInfo({},
-                                              (uint32_t)queueCreateInfos.size(), queueCreateInfos.data(),
-                                              0, nullptr,
-                                              (int)DEVICE_EXTENSIONS.size(), DEVICE_EXTENSIONS.data(),
+        vk::DeviceCreateInfo       createInfo(vk::DeviceCreateFlags(),
+                                              (uint32_t)queueCreateInfos.size(),
+                                              queueCreateInfos.data(),
+                                              0,
+                                              nullptr,
+                                              (int)DEVICE_EXTENSIONS.size(),
+                                              DEVICE_EXTENSIONS.data(),
                                               &deviceFeatures);
         if (VALIDATION_LAYERS_REQUESTED)
         {
@@ -239,28 +205,37 @@ private:
         }
 
         device_        = physicalDevice.createDevice(createInfo);
-        graphicsQueue_ = device_.getQueue(indices.graphicsFamily.value(), 0);
-        presentQueue_  = device_.getQueue(indices.presentFamily.value(), 0);
+        graphicsQueue_ = device_.getQueue(graphicsFamily_, 0);
+        presentQueue_  = device_.getQueue(presentFamily_, 0);
     }
 
-    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device)
+    bool findQueueFamilies(vk::PhysicalDevice device, uint32_t & graphicsFamily, uint32_t & presentFamily)
     {
+        bool graphicsFamilyFound = false;
+        bool presentFamilyFound  = false;
+
         std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
-
-        QueueFamilyIndices indices;
-        for (int i = 0; i < (int)families.size(); ++i)
+        for (auto f = families.begin(); f != families.end(); ++f)
         {
-            vk::QueueFamilyProperties const & f = families[i];
-            if (f.queueCount > 0 && f.queueFlags & vk::QueueFlagBits::eGraphics)
-                indices.graphicsFamily = i;
-            VkBool32 presentSupport = device.getSurfaceSupportKHR(i, surface_);
-            if (f.queueCount > 0 && presentSupport)
-                indices.presentFamily = i;
+            if (f->queueCount > 0)
+            {
+                int index = (int)std::distance(families.begin(), f);
+                if (f->queueFlags & vk::QueueFlagBits::eGraphics)
+                {
+                    graphicsFamily      = index;
+                    graphicsFamilyFound = true;
+                }
+                if (device.getSurfaceSupportKHR(index, surface_))
+                {
+                    presentFamily      = index;
+                    presentFamilyFound = true;
+                }
+            }
 
-            if (indices.isComplete())
+            if (graphicsFamilyFound && presentFamilyFound)
                 break;
         }
-        return indices;
+        return graphicsFamilyFound && presentFamilyFound;
     }
 
     void createSwapChain(vk::PhysicalDevice device)
@@ -283,10 +258,13 @@ private:
                                               extent,
                                               1,
                                               vk::ImageUsageFlagBits::eColorAttachment);
-        QueueFamilyIndices indices = findQueueFamilies(device);
-        uint32_t           queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+        uint32_t queueFamilyIndices[] =
+        {
+            graphicsFamily_,
+            presentFamily_
+        };
 
-        if (indices.graphicsFamily.value() != indices.presentFamily.value())
+        if (graphicsFamily_ != presentFamily_)
         {
             createInfo.imageSharingMode      = vk::SharingMode::eConcurrent;
             createInfo.queueFamilyIndexCount = 2;
@@ -365,13 +343,15 @@ private:
         swapChainImageViews_.reserve(swapChainImages_.size());
         for (auto const & image : swapChainImages_)
         {
-            vk::ImageViewCreateInfo createInfo(vk::ImageViewCreateFlags(),
-                                               image,
-                                               vk::ImageViewType::e2D,
-                                               swapChainImageFormat_,
-                                               vk::ComponentMapping(),
-                                               subresourceRange);
-            swapChainImageViews_.push_back(device_.createImageView(createInfo));
+            swapChainImageViews_.push_back(
+                device_.createImageView(
+                    vk::ImageViewCreateInfo(
+                        vk::ImageViewCreateFlags(),
+                        image,
+                        vk::ImageViewType::e2D,
+                        swapChainImageFormat_,
+                        vk::ComponentMapping(),
+                        subresourceRange)));
         }
     }
 
@@ -393,9 +373,22 @@ private:
                                         1,
                                         &colorAttachmentRef);
 
-        vk::RenderPassCreateInfo renderPassInfo(vk::RenderPassCreateFlags(),
-                                                1, &colorAttachment, 1, &subpass);
-        renderPass_ = device_.createRenderPass(renderPassInfo);
+        vk::SubpassDependency dependency(VK_SUBPASS_EXTERNAL,
+                                         0,
+                                         vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                         vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                         vk::AccessFlags(),
+                                         vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
+
+        renderPass_ = device_.createRenderPass(
+            vk::RenderPassCreateInfo(
+                vk::RenderPassCreateFlags(),
+                1,
+                &colorAttachment,
+                1,
+                &subpass,
+                1,
+                &dependency));
     }
 
     void createGraphicsPipeline()
@@ -403,23 +396,25 @@ private:
         vk::ShaderModule vertShaderModule = Vkx::loadShaderModule("shaders/shader.vert.spv", device_);
         vk::ShaderModule fragShaderModule = Vkx::loadShaderModule("shaders/shader.frag.spv", device_);
 
-        vk::PipelineShaderStageCreateInfo vertShaderStageInfo(vk::PipelineShaderStageCreateFlags(),
-                                                              vk::ShaderStageFlagBits::eVertex,
-                                                              vertShaderModule,
-                                                              "main");
-
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
 
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly(vk::PipelineInputAssemblyStateCreateFlags(),
                                                                vk::PrimitiveTopology::eTriangleList,
                                                                VK_FALSE);
 
-        vk::PipelineShaderStageCreateInfo fragShaderStageInfo(vk::PipelineShaderStageCreateFlags(),
-                                                              vk::ShaderStageFlagBits::eFragment,
-                                                              fragShaderModule,
-                                                              "main");
-
-        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+        vk::PipelineShaderStageCreateInfo shaderStages[] =
+        {
+            vk::PipelineShaderStageCreateInfo(
+                vk::PipelineShaderStageCreateFlags(),
+                vk::ShaderStageFlagBits::eVertex,
+                vertShaderModule,
+                "main"),
+            vk::PipelineShaderStageCreateInfo(
+                vk::PipelineShaderStageCreateFlags(),
+                vk::ShaderStageFlagBits::eFragment,
+                fragShaderModule,
+                "main")
+        };
 
         vk::Viewport viewport(0.0f, 0.0f, (float)swapChainExtent_.width, (float)swapChainExtent_.height, 0.0f, 1.0f);
         vk::Rect2D   scissor({ 0, 0 }, swapChainExtent_);
@@ -450,25 +445,25 @@ private:
         colorBlending.setPAttachments(&colorBlendAttachment);
         colorBlending.setAttachmentCount(1);
 
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-        pipelineLayout_ = device_.createPipelineLayout(pipelineLayoutInfo);
+        pipelineLayout_ = device_.createPipelineLayout(vk::PipelineLayoutCreateInfo());
 
-        vk::GraphicsPipelineCreateInfo pipelineInfo(vk::PipelineCreateFlags(),
-                                                    2,
-                                                    shaderStages,
-                                                    &vertexInputInfo,
-                                                    &inputAssembly,
-                                                    nullptr,
-                                                    &viewportState,
-                                                    &rasterizer,
-                                                    &multisampling,
-                                                    nullptr,
-                                                    &colorBlending,
-                                                    nullptr,
-                                                    pipelineLayout_,
-                                                    renderPass_,
-                                                    0);
-        graphicsPipelines_ = device_.createGraphicsPipelines(vk::PipelineCache(), pipelineInfo);
+        graphicsPipelines_ = device_.createGraphicsPipelines(
+            vk::PipelineCache(),
+            vk::GraphicsPipelineCreateInfo(vk::PipelineCreateFlags(),
+                                           2,
+                                           shaderStages,
+                                           &vertexInputInfo,
+                                           &inputAssembly,
+                                           nullptr,
+                                           &viewportState,
+                                           &rasterizer,
+                                           &multisampling,
+                                           nullptr,
+                                           &colorBlending,
+                                           nullptr,
+                                           pipelineLayout_,
+                                           renderPass_,
+                                           0));
 
         device_.destroy(fragShaderModule);
         device_.destroy(vertShaderModule);
@@ -479,20 +474,65 @@ private:
         swapChainFramebuffers_.reserve(swapChainImageViews_.size());
         for (auto const & view : swapChainImageViews_)
         {
-            vk::FramebufferCreateInfo framebufferInfo(vk::FramebufferCreateFlags(),
-                                                      renderPass_,
-                                                      1,
-                                                      &view,
-                                                      swapChainExtent_.width,
-                                                      swapChainExtent_.height,
-                                                      1);
-
-            swapChainFramebuffers_.push_back(device_.createFramebuffer(framebufferInfo));
+            swapChainFramebuffers_.push_back(
+                device_.createFramebuffer(
+                    vk::FramebufferCreateInfo(
+                        vk::FramebufferCreateFlags(),
+                        renderPass_,
+                        1,
+                        &view,
+                        swapChainExtent_.width,
+                        swapChainExtent_.height,
+                        1)));
         }
+    }
+
+    void createCommandPool(vk::PhysicalDevice const & device)
+    {
+        commandPool_ = device_.createCommandPool(
+            vk::CommandPoolCreateInfo(
+                vk::CommandPoolCreateFlags(),
+                graphicsFamily_));
+    }
+
+    void createCommandBuffers()
+    {
+        commandBuffers_ = device_.allocateCommandBuffers(
+            vk::CommandBufferAllocateInfo(
+                commandPool_,
+                vk::CommandBufferLevel::ePrimary,
+                (uint32_t)swapChainImageViews_.size()));
+
+        vk::ClearValue clearColor(std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f });
+        for (int i = 0; i < (int)commandBuffers_.size(); ++i)
+        {
+            commandBuffers_[i].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse));
+            commandBuffers_[i].beginRenderPass(
+                vk::RenderPassBeginInfo(
+                    renderPass_,
+                    swapChainFramebuffers_[i],
+                    {{ 0, 0 }, swapChainExtent_ },
+                    1,
+                    &clearColor),
+                vk::SubpassContents::eInline);
+            commandBuffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipelines_[0]);
+            commandBuffers_[i].draw(3, 1, 0, 0);
+            commandBuffers_[i].endRenderPass();
+            commandBuffers_[i].end();
+        }
+    }
+
+    void createSemaphores()
+    {
+        imageAvailableSemaphore_ = device_.createSemaphore(vk::SemaphoreCreateInfo());
+        renderFinishedSemaphore_ = device_.createSemaphore(vk::SemaphoreCreateInfo());
     }
 
     void cleanup()
     {
+        device_.destroy(renderFinishedSemaphore_);
+        device_.destroy(imageAvailableSemaphore_);
+        device_.destroy(commandPool_);
         for (auto const & framebuffer : swapChainFramebuffers_)
         {
             device_.destroy(framebuffer);
@@ -518,12 +558,46 @@ private:
 
     void mainLoop()
     {
+        while (!window_->processEvents())
+        {
+            drawFrame();
+        }
+        device_.waitIdle();
+    }
+
+    void drawFrame()
+    {
+        vk::ResultValue<uint32_t> imageIndex = device_.acquireNextImageKHR(swapChain_,
+                                                                           std::numeric_limits<uint64_t>::max(),
+                                                                           imageAvailableSemaphore_,
+                                                                           vk::Fence());
+
+        vk::PipelineStageFlags waitStages[]       = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+        vk::Semaphore          signalSemaphores[] = { renderFinishedSemaphore_ };
+        vk::SubmitInfo         submitInfo(1,
+                                          &imageAvailableSemaphore_,
+                                          waitStages,
+                                          1,
+                                          &commandBuffers_[imageIndex.value],
+                                          1,
+                                          signalSemaphores);
+        graphicsQueue_.submit(1, &submitInfo, vk::Fence());
+
+        vk::SwapchainKHR   swapChains[] = { swapChain_ };
+        vk::PresentInfoKHR presentInfo(1,
+                                       signalSemaphores,
+                                       1,
+                                       swapChains,
+                                       &imageIndex.value);
+        presentQueue_.presentKHR(presentInfo);
     }
 
     Glfwx::Window * window_ = nullptr;
     vk::Instance instance_;
     vk::DispatchLoaderDynamic dynamicLoader_;
     vk::DebugUtilsMessengerEXT messenger_;
+    uint32_t graphicsFamily_;
+    uint32_t presentFamily_;
     vk::Device device_;
     vk::Queue graphicsQueue_;
     vk::Queue presentQueue_;
@@ -537,6 +611,10 @@ private:
     vk::PipelineLayout pipelineLayout_;
     std::vector<vk::Pipeline> graphicsPipelines_;
     std::vector<vk::Framebuffer> swapChainFramebuffers_;
+    vk::CommandPool commandPool_;
+    std::vector<vk::CommandBuffer> commandBuffers_;
+    vk::Semaphore imageAvailableSemaphore_;
+    vk::Semaphore renderFinishedSemaphore_;
 };
 
 int main()
