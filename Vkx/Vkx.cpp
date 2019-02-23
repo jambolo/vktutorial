@@ -10,8 +10,8 @@
 
 namespace Vkx
 {
-//! @param 	extensions
-//! @param 	name
+//! @param  extensions
+//! @param  name
 bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, char const * name)
 {
     std::vector<vk::ExtensionProperties>::const_iterator i = std::find_if(extensions.begin(),
@@ -23,9 +23,8 @@ bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, cha
     return i != extensions.end();
 }
 
-
-//! @param 	device
-//! @param 	extensions
+//! @param  device
+//! @param  extensions
 bool allExtensionsSupported(vk::PhysicalDevice device, std::vector<char const *> const & extensions)
 {
     std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties(nullptr);
@@ -37,8 +36,8 @@ bool allExtensionsSupported(vk::PhysicalDevice device, std::vector<char const *>
     return true;
 }
 
-//! @param 	layers
-//! @param 	name
+//! @param  layers
+//! @param  name
 bool layerIsAvailable(std::vector<vk::LayerProperties> layers, char const * name)
 {
     std::vector<vk::LayerProperties>::const_iterator i = std::find_if(layers.begin(),
@@ -51,7 +50,7 @@ bool layerIsAvailable(std::vector<vk::LayerProperties> layers, char const * name
 }
 
 //!
-//! @param 	requested
+//! @param  requested
 bool allLayersAvailable(std::vector<char const *> const & requested)
 {
     std::vector<vk::LayerProperties> available = vk::enumerateInstanceLayerProperties();
@@ -63,9 +62,9 @@ bool allLayersAvailable(std::vector<char const *> const & requested)
     return true;
 }
 
-//! @param 	path        Path to shader file
-//! @param 	device      Logical device managing the shader
-//! @param 	flags       Creation flags (default: none)
+//! @param  path        Path to shader file
+//! @param  device      Logical device managing the shader
+//! @param  flags       Creation flags (default: none)
 //!
 //! @return shader module handle
 //!

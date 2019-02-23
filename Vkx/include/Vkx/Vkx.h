@@ -26,6 +26,33 @@ bool allLayersAvailable(std::vector<char const *> const & requested);
 vk::ShaderModule loadShaderModule(std::string const &         path,
                                   vk::Device &                device,
                                   vk::ShaderModuleCreateFlags flags = vk::ShaderModuleCreateFlags());
+
+namespace ColorComponentFlags
+{
+    using CCF  = vk::ColorComponentFlags;                //!< @private
+    using CCFB = vk::ColorComponentFlagBits;             //!< @private
+
+    const CCF all = CCF(vk::FlagTraits<CCFB>::allFlags); //!< All colors
+}
+
+namespace DebugUtils
+{
+namespace MessageTypeFlags
+{
+    using DUMTFE  = vk::DebugUtilsMessageTypeFlagsEXT;            //!< @private
+    using DUMTFBE = vk::DebugUtilsMessageTypeFlagBitsEXT;         //!< @private
+
+    const DUMTFE all = DUMTFE(vk::FlagTraits<DUMTFBE>::allFlags); //!< All types
+}
+
+namespace MessageSeverityFlags
+{
+    using DUMSFE  = vk::DebugUtilsMessageSeverityFlagsEXT;        //!< @private
+    using DUMSFBE = vk::DebugUtilsMessageSeverityFlagBitsEXT;     //!< @private
+
+    const DUMSFE all = DUMSFE(vk::FlagTraits<DUMSFBE>::allFlags); //!< All severities
+}
+}
 } // namespace Vkx
 
 #endif // !defined(VKX_VKX_H)
