@@ -47,6 +47,7 @@ private:
 
     static int constexpr WIDTH  = 800;
     static int constexpr HEIGHT = 600;
+    static int constexpr MAX_FRAMES_IN_FLIGHT = 2;
 
     struct SwapChainSupportInfo
     {
@@ -402,8 +403,8 @@ private:
 
     void createGraphicsPipeline()
     {
-        vk::UniqueShaderModule vertShaderModule(Vkx::loadShaderModule("shaders/shader.vert.spv", *device_));
-        vk::UniqueShaderModule fragShaderModule(Vkx::loadShaderModule("shaders/shader.frag.spv", *device_));
+        vk::UniqueShaderModule vertShaderModule(Vkx::loadShaderModule("shaders/shader.vert.spv", *device_), *device_);
+        vk::UniqueShaderModule fragShaderModule(Vkx::loadShaderModule("shaders/shader.frag.spv", *device_), *device_);
 
         vk::PipelineShaderStageCreateInfo shaderStages[] =
         {
@@ -499,29 +500,46 @@ private:
 
     void createSemaphores()
     {
-        imageAvailableSemaphore_ = device_->createSemaphoreUnique(vk::SemaphoreCreateInfo());
-        renderFinishedSemaphore_ = device_->createSemaphoreUnique(vk::SemaphoreCreateInfo());
+        imageAvailableSemaphores_.reserve(MAX_FRAMES_IN_FLIGHT);
+        renderFinishedSemaphores_.reserve(MAX_FRAMES_IN_FLIGHT);
+        inFlightFences_.reserve(MAX_FRAMES_IN_FLIGHT);
+
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            imageAvailableSemaphores_.push_back(device_->createSemaphoreUnique(vk::SemaphoreCreateInfo()));
+            renderFinishedSemaphores_.push_back(device_->createSemaphoreUnique(vk::SemaphoreCreateInfo()));
+            inFlightFences_.push_back(device_->createFenceUnique(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)));
+        }
     }
 
     void drawFrame()
     {
+        device_->waitForFences(1, &(*inFlightFences_[currentFrame_]), VK_TRUE, std::numeric_limits<uint64_t>::max());
+        device_->resetFences(1, &(*inFlightFences_[currentFrame_]));
+
         vk::ResultValue<uint32_t> imageIndex = device_->acquireNextImageKHR(*swapChain_,
                                                                             std::numeric_limits<uint64_t>::max(),
-                                                                            *imageAvailableSemaphore_,
+                                                                            *imageAvailableSemaphores_[currentFrame_],
                                                                             vk::Fence());
 
         vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo         submitInfo(1,
-                                          &(*imageAvailableSemaphore_),
+                                          &(*imageAvailableSemaphores_[currentFrame_]),
                                           &waitStage,
                                           1,
                                           &commandBuffers_[imageIndex.value],
                                           1,
-                                          &(*renderFinishedSemaphore_));
-        graphicsQueue_.submit(1, &submitInfo, vk::Fence());
+                                          &(*renderFinishedSemaphores_[currentFrame_]));
+        graphicsQueue_.submit(1, &submitInfo, *inFlightFences_[currentFrame_]);
 
-        vk::PresentInfoKHR presentInfo(1, &(*renderFinishedSemaphore_), 1, &(*swapChain_), &imageIndex.value);
-        presentQueue_.presentKHR(presentInfo);
+        presentQueue_.presentKHR(
+            vk::PresentInfoKHR(1,
+                               &(*renderFinishedSemaphores_[currentFrame_]),
+                               1,
+                               &(*swapChain_),
+                               &imageIndex.value));
+
+        currentFrame_ = (currentFrame_ + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     std::unique_ptr<Glfwx::Window> window_ = nullptr;
@@ -546,8 +564,10 @@ private:
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
     std::vector<vk::CommandBuffer> commandBuffers_;
-    vk::UniqueSemaphore imageAvailableSemaphore_;
-    vk::UniqueSemaphore renderFinishedSemaphore_;
+    std::vector<vk::UniqueSemaphore> imageAvailableSemaphores_;
+    std::vector<vk::UniqueSemaphore> renderFinishedSemaphores_;
+    std::vector<vk::UniqueFence> inFlightFences_;
+    int currentFrame_ = 0;
 };
 
 int main()
