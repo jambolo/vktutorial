@@ -35,8 +35,12 @@ set(PRIVATE_INCLUDE_PATHS
 )
 
 set(SOURCES
+    include/Vkx/Device.h
+    include/Vkx/Instance.h
     include/Vkx/Vkx.h
     
+    Device.cpp
+    Instance.cpp
     Vkx.cpp
 )
 source_group(Sources FILES ${SOURCES})
