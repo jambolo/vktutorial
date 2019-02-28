@@ -88,4 +88,24 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
 
     return shaderModule;
 }
+
+//! @param 	physicalDevice      The physical device that will allocate the memory
+//! @param 	types               Acceptable memory types as determined by vk::Device::getBufferMemoryRequirements()
+//! @param 	properties          Necessary properties
+//!
+//! @return     index of the type of memory provided by the physical device that matches the request
+//!
+//! @warning    A std::runtime_error is thrown if an appropriate type is not available
+uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties)
+{
+    vk::PhysicalDeviceMemoryProperties info = physicalDevice.getMemoryProperties();
+    for (uint32_t i = 0; i < info.memoryTypeCount; ++i)
+    {
+        if ((types & (1 << i)) == 0)
+            continue;
+        if ((info.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+    throw std::runtime_error("Vkx::findAppropriateMemoryType: failed to find appropriate memory type");
+}
 } // namespace Vkx

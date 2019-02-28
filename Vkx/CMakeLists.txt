@@ -35,10 +35,12 @@ set(PRIVATE_INCLUDE_PATHS
 )
 
 set(SOURCES
+    include/Vkx/Buffer.h
     include/Vkx/Device.h
     include/Vkx/Instance.h
     include/Vkx/Vkx.h
     
+    Buffer.cpp
     Device.cpp
     Instance.cpp
     Vkx.cpp

@@ -27,6 +27,9 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
                                   vk::Device &                device,
                                   vk::ShaderModuleCreateFlags flags = vk::ShaderModuleCreateFlags());
 
+//! Finds an appropriate memory type provided by the physical device.
+uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties);
+
 namespace ColorComponentFlags
 {
     using CCF  = vk::ColorComponentFlags;                //!< @private
