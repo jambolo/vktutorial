@@ -1,4 +1,6 @@
-#include "Vkx/Vkx.h"
+#include "Vkx.h"
+
+#include "Buffer.h"
 
 #include <vulkan/vulkan.hpp>
 
@@ -30,7 +32,7 @@ bool allExtensionsSupported(vk::PhysicalDevice device, std::vector<char const *>
     std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties(nullptr);
     for (auto const & required : extensions)
     {
-        if (!Vkx::extensionIsSupported(available, required))
+        if (!extensionIsSupported(available, required))
             return false;
     }
     return true;
@@ -56,7 +58,7 @@ bool allLayersAvailable(std::vector<char const *> const & requested)
     std::vector<vk::LayerProperties> available = vk::enumerateInstanceLayerProperties();
     for (auto const & request : requested)
     {
-        if (!Vkx::layerIsAvailable(available, request))
+        if (!layerIsAvailable(available, request))
             return false;
     }
     return true;
@@ -89,9 +91,9 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
     return shaderModule;
 }
 
-//! @param 	physicalDevice      The physical device that will allocate the memory
-//! @param 	types               Acceptable memory types as determined by vk::Device::getBufferMemoryRequirements()
-//! @param 	properties          Necessary properties
+//! @param  physicalDevice      The physical device that will allocate the memory
+//! @param  types               Acceptable memory types as determined by vk::Device::getBufferMemoryRequirements()
+//! @param  properties          Necessary properties
 //!
 //! @return     index of the type of memory provided by the physical device that matches the request
 //!
@@ -107,5 +109,59 @@ uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t t
             return i;
     }
     throw std::runtime_error("Vkx::findAppropriateMemoryType: failed to find appropriate memory type");
+}
+
+//! @param  device
+//! @param  src
+//! @param  dst
+//! @param  size
+//! @param  commandPool
+//! @param  queue
+void copyBufferSynced(vk::Device      device,
+                      vk::Buffer      src,
+                      vk::Buffer      dst,
+                      vk::DeviceSize  size,
+                      vk::CommandPool commandPool,
+                      vk::Queue       queue)
+{
+    std::vector<vk::CommandBuffer> commandBuffers = device.allocateCommandBuffers(
+        vk::CommandBufferAllocateInfo(commandPool,
+                                      vk::CommandBufferLevel::ePrimary,
+                                      1));
+    commandBuffers[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+    commandBuffers[0].copyBuffer(src, dst, vk::BufferCopy(0, 0, size));
+    commandBuffers[0].end();
+    queue.submit(vk::SubmitInfo(0, nullptr, nullptr, 1, &commandBuffers[0]), nullptr);
+    vkQueueWaitIdle(queue);
+    device.free(commandPool, 1, &commandBuffers[0]);
+}
+
+Buffer createDeviceLocalBuffer(vk::Device           device,
+                               vk::PhysicalDevice   physicalDevice,
+                               vk::BufferUsageFlags flags,
+                               void const *         src,
+                               vk::DeviceSize       size,
+                               vk::CommandPool      commandPool,
+                               vk::Queue            queue)
+{
+    Buffer staging(device,
+                   physicalDevice,
+                   size,
+                   vk::BufferUsageFlagBits::eTransferSrc,
+                   vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void * data = device.mapMemory(staging.allocation(), 0, size, vk::MemoryMapFlags());
+    memcpy(data, src, size);
+    device.unmapMemory(staging.allocation());
+
+    Buffer buffer(device,
+                  physicalDevice,
+                  size,
+                  flags | vk::BufferUsageFlagBits::eTransferDst,
+                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copyBufferSynced(device, staging, buffer, size, commandPool, queue);
+
+    return buffer;
 }
 } // namespace Vkx

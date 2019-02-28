@@ -10,6 +10,8 @@
 //! Extensions to Vulkan
 namespace Vkx
 {
+class Buffer;
+
 //! Returns true if the extension is supported.
 bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, char const * name);
 
@@ -29,6 +31,23 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
 
 //! Finds an appropriate memory type provided by the physical device.
 uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties);
+
+//! Copies one buffer to another and waits for the copy operation to finish
+void copyBufferSynced(vk::Device      device,
+                      vk::Buffer      src,
+                      vk::Buffer      dst,
+                      vk::DeviceSize  size,
+                      vk::CommandPool commandPool,
+                      vk::Queue       queue);
+
+//! Creates and initializes a eDeviceLocal buffer
+Buffer createDeviceLocalBuffer(vk::Device           device,
+                               vk::PhysicalDevice   physicalDevice,
+                               vk::BufferUsageFlags flags,
+                               void const *         src,
+                               vk::DeviceSize       size,
+                               vk::CommandPool      commandPool,
+                               vk::Queue            queue);
 
 namespace ColorComponentFlags
 {
