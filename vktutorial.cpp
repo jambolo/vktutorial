@@ -1,15 +1,19 @@
 #define GLFW_INCLUDE_VULKAN
 #include "Glfwx/Glfwx.h"
+#include "Vkx/Buffer.h"
 #include "Vkx/Vkx.h"
 
+#include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -19,14 +23,67 @@ static bool constexpr VALIDATION_LAYERS_REQUESTED = false;
 static bool constexpr VALIDATION_LAYERS_REQUESTED = true;
 #endif
 
+// These are the validation layers we will be using.
 std::vector<char const *> const VALIDATION_LAYERS =
 {
     "VK_LAYER_LUNARG_standard_validation"
 };
 
+// In order to display the output, we need a swap chain.
 std::vector<char const *> const DEVICE_EXTENSIONS =
 {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
+// This is the vertex format.
+struct Vertex
+{
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    // Returns the create info for this vertex format (assumes one binding)
+    static vk::PipelineVertexInputStateCreateInfo vertexInputInfo()
+    {
+        return vk::PipelineVertexInputStateCreateInfo({},
+                                                      1,
+                                                      &bindingDescription_,
+                                                      (uint32_t)attributeDescriptions_.size(),
+                                                      attributeDescriptions_.data()
+        );
+    }
+
+private:
+    static vk::VertexInputBindingDescription bindingDescription_;
+    static std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions_;
+};
+
+// This is the layout of the vertices, basically initial offset and stride
+vk::VertexInputBindingDescription Vertex::bindingDescription_ =
+{
+    0, sizeof(Vertex), vk::VertexInputRate::eVertex
+};
+
+// This describes the format, index, and positions of the vertex attributes, one entry for each attribute
+std::array<vk::VertexInputAttributeDescription, 2> Vertex::attributeDescriptions_ =
+{
+    {
+        { 0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos) },
+        { 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) }
+    }
+};
+
+// This is the vertex data that is loaded into the vertex buffer. It must match the attribute descriptions.
+static Vertex const vertices[] =
+{
+    {{ -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+    {{ 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+    {{ 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
+    {{ -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } }
+};
+
+const uint16_t indices[] =
+{
+    0, 1, 2, 2, 3, 0
 };
 
 class HelloTriangleApplication
@@ -56,16 +113,21 @@ private:
         std::vector<vk::PresentModeKHR> presentModes;
     };
 
-    int initializeWindow()
+    void initializeWindow()
     {
-        window_ = std::make_unique<Glfwx::Window>(WIDTH, HEIGHT, "vktutorial");
         Glfwx::Window::hint(Glfwx::Hint::eCLIENT_API, Glfwx::eNO_API);
         Glfwx::Window::hint(Glfwx::Hint::eRESIZABLE, Glfwx::eFALSE);
-        return window_->create();
+        window_ = std::make_unique<Glfwx::Window>(WIDTH, HEIGHT, "vktutorial");
+        window_->setFramebufferSizeCallback(
+            [this] (Glfwx::Window *, int, int)
+            {
+                this->framebufferSizeChanged_ = true;
+            });
     }
 
     void initializeVulkan()
     {
+        // If we want validation layers, we must check that they are available
         if (VALIDATION_LAYERS_REQUESTED && !Vkx::allLayersAvailable(VALIDATION_LAYERS))
             throw std::runtime_error("validation layers requested, but not available!");
 
@@ -74,8 +136,9 @@ private:
                                     "No Engine",
                                     VK_MAKE_VERSION(1, 0, 0),
                                     VK_API_VERSION_1_0);
-
+        // Some extensions are necessary.
         auto requiredExtensions = myRequiredExtensions();
+
         vk::InstanceCreateInfo createInfo({},
                                           &appInfo,
                                           0,
@@ -87,24 +150,34 @@ private:
             createInfo.setEnabledLayerCount((uint32_t)VALIDATION_LAYERS.size());
             createInfo.setPpEnabledLayerNames(VALIDATION_LAYERS.data());
         }
+
+        // Create a Vulkan instance
         instance_ = vk::createInstanceUnique(createInfo);
 
+        // Some objects, e.g. the validation layer, are not linked to the static loader and must be loaded by a dynamic loader.
         dynamicLoader_.init(*instance_);
 
+        // Set up validation callbacks
         setupDebugMessenger();
 
-        surface_        = vk::UniqueSurfaceKHR(window_->createSurface(*instance_, nullptr), *instance_);
-        physicalDevice_ = firstSuitablePhysicalDevice();
+        // Create a display surface. This is system-dependent feature and we use glfw to handle that.
+        surface_ = vk::UniqueSurfaceKHR(window_->createSurface(*instance_, nullptr), *instance_);
+
+        choosePhysicalDevice();
         createLogicalDevice();
         createSwapChain();
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
-        createFrameBuffers();
+        createFramebuffers();
+        createCommandPools();
+        createVertexBuffer();
+        createIndexBuffer();
         createCommandBuffers();
         createSemaphores();
     }
 
+    // Some extensions are required. We collect the names here
     std::vector<char const *> myRequiredExtensions()
     {
         std::vector<char const *> requiredExtensions = Glfwx::requiredInstanceExtensions();
@@ -115,6 +188,7 @@ private:
         return requiredExtensions;
     }
 
+    // Link up to the debug messenger extension, which will feed us debugging output from the validation layers.
     void setupDebugMessenger()
     {
         if (!VALIDATION_LAYERS_REQUESTED)
@@ -131,6 +205,7 @@ private:
             dynamicLoader_);
     }
 
+    // This callback is called by the debug messenger extension to handle the debug output from the validation layers.
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT       messageSeverity,
                                                         VkDebugUtilsMessageTypeFlagsEXT              messageTypes,
                                                         VkDebugUtilsMessengerCallbackDataEXT const * pCallbackData,
@@ -143,8 +218,47 @@ private:
         return VK_FALSE;
     }
 
+    void choosePhysicalDevice()
+    {
+        // Find a physical device that has the appropriate functionality for what we need.
+        physicalDevice_ = firstSuitablePhysicalDevice();
+
+#if !defined(NDEBUG)
+        {
+            vk::PhysicalDeviceProperties properties = physicalDevice_.getProperties();
+
+            std::cerr << "Physical Device chosen: " << properties.deviceName
+                      << ", version: " << properties.driverVersion
+                      << std::endl;
+
+            vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice_.getMemoryProperties();
+
+            std::cerr << "    Memory types:" << std::endl;
+            for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+            {
+                std::cerr << "        "
+                          << i
+                          << ": properties - " << vk::to_string(memoryProperties.memoryTypes[i].propertyFlags)
+                          << ", heapIndex - " << memoryProperties.memoryTypes[i].heapIndex
+                          << std::endl;
+            }
+
+            std::cerr << "    Heaps:" << std::endl;
+            for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; ++i)
+            {
+                std::cerr << "        "
+                          << i
+                          << ": size - " << double(memoryProperties.memoryHeaps[i].size) / double(1024 * 1024 * 1024)
+                          << " GiB, flags - " << vk::to_string(memoryProperties.memoryHeaps[i].flags)
+                          << std::endl;
+            }
+        }
+#endif  // if !defined(NDEBUG)
+    }
+
     vk::PhysicalDevice firstSuitablePhysicalDevice()
     {
+        // Basically, we just enumerate the physical devices and pick the first one that is suitable.
         std::vector<vk::PhysicalDevice> physicalDevices = instance_->enumeratePhysicalDevices();
         for (auto const & device : physicalDevices)
         {
@@ -157,14 +271,7 @@ private:
 
     bool isSuitable(vk::PhysicalDevice const & device)
     {
-        //         bool suitable = false;
-        //         vk::PhysicalDeviceProperties properties = device.getProperties();
-        //         vk::PhysicalDeviceFeatures features = device.getFeatures();
-        //
-        //         if (properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && features.geometryShader)
-        //             suitable = true;
-        //
-        //         return suitable;
+        // A suitable device has the necessary queues, device extensions, and swapchain support
         uint32_t graphicsFamily;
         uint32_t presentFamily;
         if (!findQueueFamilies(device, graphicsFamily, presentFamily))
@@ -225,12 +332,12 @@ private:
         bool presentFamilyFound  = false;
 
         std::vector<vk::QueueFamilyProperties> families = device.getQueueFamilyProperties();
-        for (auto f = families.begin(); f != families.end(); ++f)
+        int index = 0;
+        for (auto const & f : families)
         {
-            if (f->queueCount > 0)
+            if (f.queueCount > 0)
             {
-                int index = (int)std::distance(families.begin(), f);
-                if (f->queueFlags & vk::QueueFlagBits::eGraphics)
+                if (f.queueFlags & vk::QueueFlagBits::eGraphics)
                 {
                     graphicsFamily      = index;
                     graphicsFamilyFound = true;
@@ -244,6 +351,7 @@ private:
 
             if (graphicsFamilyFound && presentFamilyFound)
                 break;
+            ++index;
         }
         return graphicsFamilyFound && presentFamilyFound;
     }
@@ -288,10 +396,11 @@ private:
         createInfo.presentMode  = presentMode;
         createInfo.clipped      = VK_TRUE;
 
-        swapChain_            = device_->createSwapchainKHRUnique(createInfo);
-        swapChainImages_      = device_->getSwapchainImagesKHR(*swapChain_);
-        swapChainImageFormat_ = surfaceFormat.format;
-        swapChainExtent_      = extent;
+        swapChain_              = device_->createSwapchainKHRUnique(createInfo);
+        swapChainImages_        = device_->getSwapchainImagesKHR(*swapChain_);
+        swapChainImageFormat_   = surfaceFormat.format;
+        swapChainExtent_        = extent;
+        framebufferSizeChanged_ = false;
     }
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const & available)
@@ -338,12 +447,9 @@ private:
         }
         else
         {
-            uint32_t width, height;
-
-            width  = std::clamp((uint32_t)WIDTH, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-            height = std::clamp((uint32_t)HEIGHT, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-            return { width, height };
+            int width, height;
+            window_->framebufferSize(width, height);
+            return { (uint32_t)width, (uint32_t)height };
         }
     }
 
@@ -412,8 +518,7 @@ private:
             vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment, *fragShaderModule, "main")
         };
 
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-
+        vk::PipelineVertexInputStateCreateInfo   vertexInputInfo = Vertex::vertexInputInfo();
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList, VK_FALSE);
 
         vk::Viewport viewport(0.0f, 0.0f, (float)swapChainExtent_.width, (float)swapChainExtent_.height, 0.0f, 1.0f);
@@ -455,7 +560,7 @@ private:
                                            0));
     }
 
-    void createFrameBuffers()
+    void createFramebuffers()
     {
         swapChainFramebuffers_.reserve(swapChainImageViews_.size());
         for (auto const & view : swapChainImageViews_)
@@ -472,29 +577,65 @@ private:
         }
     }
 
+    void createCommandPools()
+    {
+        commandPool_          = device_->createCommandPoolUnique(vk::CommandPoolCreateInfo({}, graphicsFamily_));
+        transientCommandPool_ = device_->createCommandPoolUnique(
+            vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eTransient,
+                                      graphicsFamily_));
+    }
+
+    void createVertexBuffer()
+    {
+        vertexBuffer_ = Vkx::createDeviceLocalBuffer(device_.get(),
+                                                     physicalDevice_,
+                                                     vk::BufferUsageFlagBits::eVertexBuffer,
+                                                     vertices,
+                                                     sizeof(vertices),
+                                                     transientCommandPool_.get(),
+                                                     graphicsQueue_);
+    }
+
+    void createIndexBuffer()
+    {
+        indexBuffer_ = Vkx::createDeviceLocalBuffer(device_.get(),
+                                                    physicalDevice_,
+                                                    vk::BufferUsageFlagBits::eIndexBuffer,
+                                                    indices,
+                                                    sizeof(indices),
+                                                    transientCommandPool_.get(),
+                                                    graphicsQueue_);
+    }
+
     void createCommandBuffers()
     {
-        commandPool_    = device_->createCommandPoolUnique(vk::CommandPoolCreateInfo({}, graphicsFamily_));
-        commandBuffers_ = device_->allocateCommandBuffers(
+        vk::ClearValue clearColor(std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f });
+        vk::Buffer     vertexBuffers[] = { vertexBuffer_ };
+        vk::DeviceSize offsets[]       = { 0 };
+
+        commandBuffers_ = device_->allocateCommandBuffersUnique(
             vk::CommandBufferAllocateInfo(*commandPool_,
                                           vk::CommandBufferLevel::ePrimary,
                                           (uint32_t)swapChainImageViews_.size()));
 
-        vk::ClearValue clearColor(std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f });
-        for (int i = 0; i < (int)commandBuffers_.size(); ++i)
+        int i = 0;
+        for (auto & buffer : commandBuffers_)
         {
-            commandBuffers_[i].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse));
-            commandBuffers_[i].beginRenderPass(
+            buffer->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse));
+            buffer->beginRenderPass(
                 vk::RenderPassBeginInfo(*renderPass_,
                                         *swapChainFramebuffers_[i],
                                         {{ 0, 0 }, swapChainExtent_ },
                                         1,
                                         &clearColor),
                 vk::SubpassContents::eInline);
-            commandBuffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline_);
-            commandBuffers_[i].draw(3, 1, 0, 0);
-            commandBuffers_[i].endRenderPass();
-            commandBuffers_[i].end();
+            buffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline_);
+            buffer->bindVertexBuffers(0, 1, vertexBuffers, offsets);
+            buffer->bindIndexBuffer(indexBuffer_, 0, vk::IndexType::eUint16);
+            buffer->drawIndexed(6, 1, 0, 0, 0);
+            buffer->endRenderPass();
+            buffer->end();
+            ++i;
         }
     }
 
@@ -515,31 +656,86 @@ private:
     void drawFrame()
     {
         device_->waitForFences(1, &(*inFlightFences_[currentFrame_]), VK_TRUE, std::numeric_limits<uint64_t>::max());
-        device_->resetFences(1, &(*inFlightFences_[currentFrame_]));
 
-        vk::ResultValue<uint32_t> imageIndex = device_->acquireNextImageKHR(*swapChain_,
+        uint32_t imageIndex;
+        try
+        {
+            vk::ResultValue<uint32_t> result = device_->acquireNextImageKHR(*swapChain_,
                                                                             std::numeric_limits<uint64_t>::max(),
                                                                             *imageAvailableSemaphores_[currentFrame_],
-                                                                            vk::Fence());
+                                                                            nullptr);
+
+            if (result.result != vk::Result::eSuccess && result.result != vk::Result::eSuboptimalKHR)
+                throw std::runtime_error("drawFrame: failed to acquire swap chain image!");
+            imageIndex = result.value;
+        }
+        catch (vk::OutOfDateKHRError &)
+        {
+            recreateSwapChain();
+            return;
+        }
 
         vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo         submitInfo(1,
                                           &(*imageAvailableSemaphores_[currentFrame_]),
                                           &waitStage,
                                           1,
-                                          &commandBuffers_[imageIndex.value],
+                                          &(*commandBuffers_[imageIndex]),
                                           1,
                                           &(*renderFinishedSemaphores_[currentFrame_]));
+        device_->resetFences(1, &(*inFlightFences_[currentFrame_]));
         graphicsQueue_.submit(1, &submitInfo, *inFlightFences_[currentFrame_]);
 
-        presentQueue_.presentKHR(
-            vk::PresentInfoKHR(1,
-                               &(*renderFinishedSemaphores_[currentFrame_]),
-                               1,
-                               &(*swapChain_),
-                               &imageIndex.value));
+        try
+        {
+            vk::Result result = presentQueue_.presentKHR(
+                vk::PresentInfoKHR(1,
+                                   &(*renderFinishedSemaphores_[currentFrame_]),
+                                   1,
+                                   &(*swapChain_),
+                                   &imageIndex));
+            if (result == vk::Result::eSuboptimalKHR || framebufferSizeChanged_)
+                recreateSwapChain();
+        }
+        catch (vk::OutOfDateKHRError &)
+        {
+            recreateSwapChain();
+        }
 
         currentFrame_ = (currentFrame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    void resetSwapChain()
+    {
+        swapChainFramebuffers_.clear();
+        commandBuffers_.clear();
+        graphicsPipeline_.reset();
+        pipelineLayout_.reset();
+        renderPass_.reset();
+        swapChainImageViews_.clear();
+        swapChain_.reset();
+    }
+
+    void recreateSwapChain()
+    {
+        int width, height;
+        window_->framebufferSize(width, height);
+        while (width == 0 || height == 0)
+        {
+            window_->waitEvents();
+            window_->framebufferSize(width, height);
+        }
+
+        vkDeviceWaitIdle(*device_);
+
+        resetSwapChain();
+
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandBuffers();
     }
 
     std::unique_ptr<Glfwx::Window> window_ = nullptr;
@@ -563,22 +759,24 @@ private:
     vk::UniquePipeline graphicsPipeline_;
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
-    std::vector<vk::CommandBuffer> commandBuffers_;
+    vk::UniqueCommandPool transientCommandPool_;
+    Vkx::Buffer vertexBuffer_;
+    Vkx::Buffer indexBuffer_;
+    std::vector<vk::UniqueCommandBuffer> commandBuffers_;
     std::vector<vk::UniqueSemaphore> imageAvailableSemaphores_;
     std::vector<vk::UniqueSemaphore> renderFinishedSemaphores_;
     std::vector<vk::UniqueFence> inFlightFences_;
     int currentFrame_ = 0;
+    bool framebufferSizeChanged_ = false;
 };
 
 int main()
 {
-    HelloTriangleApplication app;
-
+    Glfwx::Instance glfwx;
     try
     {
-        Glfwx::init();
+        HelloTriangleApplication app;
         app.run();
-        Glfwx::terminate();
     }
     catch (const std::exception & e)
     {
