@@ -135,33 +135,4 @@ void copyBufferSynced(vk::Device      device,
     vkQueueWaitIdle(queue);
     device.free(commandPool, 1, &commandBuffers[0]);
 }
-
-Buffer createDeviceLocalBuffer(vk::Device           device,
-                               vk::PhysicalDevice   physicalDevice,
-                               vk::BufferUsageFlags flags,
-                               void const *         src,
-                               vk::DeviceSize       size,
-                               vk::CommandPool      commandPool,
-                               vk::Queue            queue)
-{
-    Buffer staging(device,
-                   physicalDevice,
-                   size,
-                   vk::BufferUsageFlagBits::eTransferSrc,
-                   vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    void * data = device.mapMemory(staging.allocation(), 0, size, vk::MemoryMapFlags());
-    memcpy(data, src, size);
-    device.unmapMemory(staging.allocation());
-
-    Buffer buffer(device,
-                  physicalDevice,
-                  size,
-                  flags | vk::BufferUsageFlagBits::eTransferDst,
-                  vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    copyBufferSynced(device, staging, buffer, size, commandPool, queue);
-
-    return buffer;
-}
 } // namespace Vkx
