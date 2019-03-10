@@ -34,28 +34,26 @@ uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t t
 
 namespace ColorComponentFlags
 {
-    using CCF  = vk::ColorComponentFlags;                //!< @private
-    using CCFB = vk::ColorComponentFlagBits;             //!< @private
-
-    const CCF all = CCF(vk::FlagTraits<CCFB>::allFlags); //!< All colors
+    //! All colors
+    vk::ColorComponentFlags const all = vk::ColorComponentFlags(vk::FlagTraits<vk::ColorComponentFlagBits>::allFlags);
 }
 
 namespace DebugUtils
 {
 namespace MessageTypeFlags
 {
-    using DUMTFE  = vk::DebugUtilsMessageTypeFlagsEXT;            //!< @private
-    using DUMTFBE = vk::DebugUtilsMessageTypeFlagBitsEXT;         //!< @private
-
-    const DUMTFE all = DUMTFE(vk::FlagTraits<DUMTFBE>::allFlags); //!< All types
+    //! All message types
+    vk::DebugUtilsMessageTypeFlagsEXT const all = vk::DebugUtilsMessageTypeFlagsEXT(
+        vk::FlagTraits<vk::DebugUtilsMessageTypeFlagBitsEXT>::allFlags);
 }
 
 namespace MessageSeverityFlags
 {
-    using DUMSFE  = vk::DebugUtilsMessageSeverityFlagsEXT;        //!< @private
-    using DUMSFBE = vk::DebugUtilsMessageSeverityFlagBitsEXT;     //!< @private
-
-    const DUMSFE all = DUMSFE(vk::FlagTraits<DUMSFBE>::allFlags); //!< All severities
+    //! All message severities
+    vk::DebugUtilsMessageSeverityFlagsEXT const all = vk::DebugUtilsMessageSeverityFlagsEXT(
+        vk::FlagTraits<vk::DebugUtilsMessageSeverityFlagBitsEXT>::allFlags);                                                                                     //!<
+                                                                                                                                                                 //!< All
+                                                                                                                                                                 //!< severities
 }
 }
 } // namespace Vkx

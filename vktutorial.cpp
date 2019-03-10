@@ -3,11 +3,15 @@
 #include "Vkx/Buffer.h"
 #include "Vkx/Vkx.h"
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -113,6 +117,13 @@ private:
         std::vector<vk::PresentModeKHR> presentModes;
     };
 
+    struct UniformBufferObject
+    {
+        alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 view;
+        alignas(16) glm::mat4 projection;
+    };
+
     void initializeWindow()
     {
         Glfwx::Window::hint(Glfwx::Hint::eCLIENT_API, Glfwx::eNO_API);
@@ -168,11 +179,15 @@ private:
         createSwapChain();
         createImageViews();
         createRenderPass();
+        createDescriptorSetLayout();
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPools();
         createVertexBuffer();
         createIndexBuffer();
+        createUniformBuffers();
+        createDescriptorPool();
+        createDescriptorSets();
         createCommandBuffers();
         createSemaphores();
     }
@@ -507,6 +522,12 @@ private:
                                      &dependency));
     }
 
+    void createDescriptorSetLayout()
+    {
+        vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex);
+        descriptorSetLayout_ = device_->createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo({}, 1, &binding));
+    }
+
     void createGraphicsPipeline()
     {
         vk::UniqueShaderModule vertShaderModule(Vkx::loadShaderModule("shaders/shader.vert.spv", *device_), *device_);
@@ -527,7 +548,7 @@ private:
 
         vk::PipelineRasterizationStateCreateInfo rasterizer;
         rasterizer.setCullMode(vk::CullModeFlagBits::eBack);
-        rasterizer.setFrontFace(vk::FrontFace::eClockwise);
+        rasterizer.setFrontFace(vk::FrontFace::eCounterClockwise);  // This is bullshit because of glm::lookAt
         rasterizer.setLineWidth(1.0);
 
         vk::PipelineMultisampleStateCreateInfo multisampling;
@@ -539,7 +560,7 @@ private:
         colorBlending.setPAttachments(&colorBlendAttachment);
         colorBlending.setAttachmentCount(1);
 
-        pipelineLayout_ = device_->createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo());
+        pipelineLayout_ = device_->createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo({}, 1, &descriptorSetLayout_.get()));
 
         graphicsPipeline_ = device_->createGraphicsPipelineUnique(
             vk::PipelineCache(),
@@ -570,7 +591,7 @@ private:
                     vk::FramebufferCreateInfo({},
                                               *renderPass_,
                                               1,
-                                              &(*view),
+                                              &view.get(),
                                               swapChainExtent_.width,
                                               swapChainExtent_.height,
                                               1)));
@@ -587,24 +608,62 @@ private:
 
     void createVertexBuffer()
     {
-        vertexBuffer_ = Vkx::createDeviceLocalBuffer(device_.get(),
-                                                     physicalDevice_,
-                                                     vk::BufferUsageFlagBits::eVertexBuffer,
-                                                     vertices,
-                                                     sizeof(vertices),
-                                                     transientCommandPool_.get(),
-                                                     graphicsQueue_);
+        vertexBuffer_ = Vkx::LocalBuffer(device_.get(),
+                                         physicalDevice_,
+                                         sizeof(vertices),
+                                         vk::BufferUsageFlagBits::eVertexBuffer,
+                                         vertices,
+                                         transientCommandPool_.get(),
+                                         graphicsQueue_);
     }
 
     void createIndexBuffer()
     {
-        indexBuffer_ = Vkx::createDeviceLocalBuffer(device_.get(),
-                                                    physicalDevice_,
-                                                    vk::BufferUsageFlagBits::eIndexBuffer,
-                                                    indices,
-                                                    sizeof(indices),
-                                                    transientCommandPool_.get(),
-                                                    graphicsQueue_);
+        indexBuffer_ = Vkx::LocalBuffer(device_.get(),
+                                        physicalDevice_,
+                                        sizeof(indices),
+                                        vk::BufferUsageFlagBits::eIndexBuffer,
+                                        indices,
+                                        transientCommandPool_.get(),
+                                        graphicsQueue_);
+    }
+
+    void createUniformBuffers()
+    {
+        vk::DeviceSize size = sizeof(UniformBufferObject);
+        uniformBuffers_.reserve(swapChainImages_.size());
+
+        for (size_t i = 0; i < swapChainImages_.size(); ++i)
+        {
+            uniformBuffers_.emplace_back(device_.get(), physicalDevice_, size, vk::BufferUsageFlagBits::eUniformBuffer);
+        }
+    }
+
+    void createDescriptorPool()
+    {
+        vk::DescriptorPoolSize       poolSize(vk::DescriptorType::eUniformBuffer, (uint32_t)swapChainImages_.size());
+        vk::DescriptorPoolCreateInfo poolInfo({}, (uint32_t)swapChainImages_.size(), 1, &poolSize);
+        descriptorPool_ = device_->createDescriptorPoolUnique(poolInfo);
+    }
+
+    void createDescriptorSets()
+    {
+        std::vector<vk::DescriptorSetLayout> layouts(swapChainImages_.size(), descriptorSetLayout_.get());
+        vk::DescriptorSetAllocateInfo        allocInfo(descriptorPool_.get(), (uint32_t)swapChainImages_.size(), layouts.data());
+        descriptorSets_ = device_->allocateDescriptorSets(allocInfo);
+        for (size_t i = 0; i < swapChainImages_.size(); ++i)
+        {
+            vk::DescriptorBufferInfo bufferInfo(uniformBuffers_[i], 0, sizeof(UniformBufferObject));
+            vk::WriteDescriptorSet   writeDescriptorSet(descriptorSets_[i],
+                                                        0,
+                                                        0,
+                                                        1,
+                                                        vk::DescriptorType::eUniformBuffer,
+                                                        nullptr,
+                                                        &bufferInfo,
+                                                        nullptr);
+            device_->updateDescriptorSets(1, &writeDescriptorSet, 0, nullptr);
+        }
     }
 
     void createCommandBuffers()
@@ -616,7 +675,7 @@ private:
         commandBuffers_ = device_->allocateCommandBuffersUnique(
             vk::CommandBufferAllocateInfo(*commandPool_,
                                           vk::CommandBufferLevel::ePrimary,
-                                          (uint32_t)swapChainImageViews_.size()));
+                                          (uint32_t)swapChainImages_.size()));
 
         int i = 0;
         for (auto & buffer : commandBuffers_)
@@ -632,6 +691,8 @@ private:
             buffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline_);
             buffer->bindVertexBuffers(0, 1, vertexBuffers, offsets);
             buffer->bindIndexBuffer(indexBuffer_, 0, vk::IndexType::eUint16);
+            buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                       pipelineLayout_.get(), 0, 1, &descriptorSets_[i], 0, nullptr);
             buffer->drawIndexed(6, 1, 0, 0, 0);
             buffer->endRenderPass();
             buffer->end();
@@ -675,6 +736,8 @@ private:
             return;
         }
 
+        updateUniformBuffer(imageIndex);
+
         vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo         submitInfo(1,
                                           &(*imageAvailableSemaphores_[currentFrame_]),
@@ -692,7 +755,7 @@ private:
                 vk::PresentInfoKHR(1,
                                    &(*renderFinishedSemaphores_[currentFrame_]),
                                    1,
-                                   &(*swapChain_),
+                                   &swapChain_.get(),
                                    &imageIndex));
             if (result == vk::Result::eSuboptimalKHR || framebufferSizeChanged_)
                 recreateSwapChain();
@@ -703,6 +766,28 @@ private:
         }
 
         currentFrame_ = (currentFrame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    void updateUniformBuffer(int index)
+    {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+
+        auto  currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+        UniformBufferObject ubo;
+        ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view       = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.projection = glm::perspective(glm::quarter_pi<float>(),
+                                          swapChainExtent_.width / (float)swapChainExtent_.height,
+                                          0.1f,
+                                          10.0f);
+        // "GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted. The easiest way to
+        // compensate for that is to flip the sign on the scaling factor of the Y axis in the projection matrix. If you don't do
+        // this, then the image will be rendered upside down."
+        ubo.projection[1][1] *= -1;   // This has got to go
+
+        uniformBuffers_[index].set(device_.get(), &ubo, 0, sizeof(ubo));
     }
 
     void resetSwapChain()
@@ -755,13 +840,17 @@ private:
     vk::Format swapChainImageFormat_;
     vk::Extent2D swapChainExtent_;
     vk::UniqueRenderPass renderPass_;
+    vk::UniqueDescriptorSetLayout descriptorSetLayout_;
     vk::UniquePipelineLayout pipelineLayout_;
     vk::UniquePipeline graphicsPipeline_;
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
     vk::UniqueCommandPool transientCommandPool_;
-    Vkx::Buffer vertexBuffer_;
-    Vkx::Buffer indexBuffer_;
+    Vkx::LocalBuffer vertexBuffer_;
+    Vkx::LocalBuffer indexBuffer_;
+    std::vector<Vkx::GlobalBuffer> uniformBuffers_;
+    vk::UniqueDescriptorPool descriptorPool_;
+    std::vector<vk::DescriptorSet> descriptorSets_;
     std::vector<vk::UniqueCommandBuffer> commandBuffers_;
     std::vector<vk::UniqueSemaphore> imageAvailableSemaphores_;
     std::vector<vk::UniqueSemaphore> renderFinishedSemaphores_;
