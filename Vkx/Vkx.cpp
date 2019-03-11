@@ -111,6 +111,7 @@ uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t t
     throw std::runtime_error("Vkx::findAppropriateMemoryType: failed to find appropriate memory type");
 }
 
+#if 0
 //! @param  device
 //! @param  src
 //! @param  dst
@@ -134,5 +135,38 @@ void copyBufferSynced(vk::Device      device,
     queue.submit(vk::SubmitInfo(0, nullptr, nullptr, 1, &commandBuffers[0]), nullptr);
     vkQueueWaitIdle(queue);
     device.free(commandPool, 1, &commandBuffers[0]);
+}
+#endif // if 0
+
+//! This function creates a one-time command buffer and executes it. The function returns when the queue is idle.
+//!
+//! The function parameter should add commands as normal to the command buffer parameter, like this:
+//! @code
+//!     executeOnceSynced(device, commandPool, queue, [src, dst, size] (vk::CommandBuffer commands) {
+//!         commands.copyBuffer(src, dst, vk::BufferCopy(0, 0, size));
+//!     });
+//! @endcode
+//!
+//! @param  device          The command buffer is allocated from this device
+//! @param  commandPool     Commands are allocated from this pool
+//! @param  queue           The command buffer is executed in this queue
+//! @param  commands        Adds commands to the specified command buffer
+//!
+//! @note       commandPool should specify a pool optimized for transient command buffers
+
+void executeOnceSynched(vk::Device                             device,
+                        vk::CommandPool                        commandPool,
+                        vk::Queue                              queue,
+                        std::function<void(vk::CommandBuffer)> commands)
+{
+    std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(
+        vk::CommandBufferAllocateInfo(commandPool,
+                                      vk::CommandBufferLevel::ePrimary,
+                                      1));
+    commandBuffers[0]->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+    commands(commandBuffers[0].get());
+    commandBuffers[0]->end();
+    queue.submit(vk::SubmitInfo(0, nullptr, nullptr, 1, &commandBuffers[0].get()), nullptr);
+    vkQueueWaitIdle(queue);
 }
 } // namespace Vkx

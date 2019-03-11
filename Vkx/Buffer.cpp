@@ -12,6 +12,7 @@ namespace Vkx
 //! @param  usage               Usage flags
 //! @param  sharingMode         Sharing mode
 //! @param  memoryProperties    Memory properties
+//! @param  sharingMode         Sharing mode flag (default: eExclusive)
 //!
 //! @warn       A std::runtime_error is thrown if the buffer cannot be created and allocated
 //! @todo       "... you're not supposed to actually call vkAllocateMemory for every individual buffer. ... The right way to
@@ -36,36 +37,32 @@ Buffer::Buffer(vk::Device              device,
     device.bindBufferMemory(buffer_.get(), allocation_.get(), 0);
 }
 
-//! @param  device
-//! @param  src
-//! @param  size
-//! @param  commandPool
-//! @param  queue
-void Buffer::copySynced(vk::Device         device,
-                        vk::PhysicalDevice physicalDevice,
-                        vk::CommandPool    commandPool,
-                        vk::Queue          queue,
-                        Buffer const &     src,
-                        vk::DeviceSize     size)
+//! @param  rhs     Move source
+Buffer::Buffer(Buffer && rhs)
 {
-    std::vector<vk::CommandBuffer> commandBuffers = device.allocateCommandBuffers(
-        vk::CommandBufferAllocateInfo(commandPool,
-                                      vk::CommandBufferLevel::ePrimary,
-                                      1));
-    commandBuffers[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-    commandBuffers[0].copyBuffer(src.buffer_.get(), buffer_.get(), vk::BufferCopy(0, 0, size));
-    commandBuffers[0].end();
-    queue.submit(vk::SubmitInfo(0, nullptr, nullptr, 1, &commandBuffers[0]), nullptr);
-    vkQueueWaitIdle(queue);
-    device.free(commandPool, 1, &commandBuffers[0]);
+    allocation_ = std::move(rhs.allocation_);
+    buffer_     = std::move(rhs.buffer_);
 }
 
-//! @param  vk::Device device
-//! @param  vk::PhysicalDevice physicalDevice
-//! @param  size_t size
-//! @param  vk::BufferUsageFlags usage
-//! @param  void const * src
-//! @param  vk::SharingMode sharingMode
+//! @param  rhs     Move source
+//!
+//! @return Vkx::Buffer::Buffer &
+Buffer & Buffer::operator =(Buffer && rhs)
+{
+    if (this != &rhs)
+    {
+        allocation_ = std::move(rhs.allocation_);
+        buffer_     = std::move(rhs.buffer_);
+    }
+    return *this;
+}
+
+//! @param  device          Logical device associated with the buffer
+//! @param  physicalDevice  Physical device associated with the buffer's allocation
+//! @param  size            Nominal size of the buffer
+//! @param  usage           Usage flags
+//! @param  src             Data to be copied into the buffer, or nullptr if nothing to copy (default: nullptr)
+//! @param  sharingMode     Sharing mode flag (default: eExclusive)
 GlobalBuffer::GlobalBuffer(vk::Device           device,
                            vk::PhysicalDevice   physicalDevice,
                            size_t               size,
@@ -76,32 +73,31 @@ GlobalBuffer::GlobalBuffer(vk::Device           device,
              physicalDevice,
              size,
              usage,
-             vk::MemoryPropertyFlagBits::eHostVisible |
-             vk::MemoryPropertyFlagBits::eHostCoherent)
+             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
 {
     if (src)
-        set(device, src, 0, size);
+        set(device, 0, src, size);
 }
 
-//! @param  vk::Device device
-//! @param  void const * src
-//! @param  size_t offset
-//! @param  size_t size
-void GlobalBuffer::set(vk::Device device, void const * src, size_t offset, size_t size)
+//! @param  device  Logical device associated with the buffer
+//! @param  offset  Where in the buffer to put the copied data
+//! @param  src     Data to be copied into the buffer
+//! @param  size    Size of the data to copy
+void GlobalBuffer::set(vk::Device device, size_t offset, void const * src, size_t size)
 {
     char * data = (char *)device.mapMemory(allocation(), 0, size, vk::MemoryMapFlags());
     memcpy(data + offset, src, size);
     device.unmapMemory(allocation());
 }
 
-//! @param  vk::Device device
-//! @param  vk::PhysicalDevice physicalDevice
-//! @param  vk::DeviceSize size
-//! @param  vk::BufferUsageFlags usage
-//! @param  vk::SharingMode sharingMode
+//! @param  device          Logical device associated with the buffer
+//! @param  physicalDevice  Physical device associated with the buffer's allocation
+//! @param  size            Nominal size of the buffer
+//! @param  usage           Usage flags
+//! @param  sharingMode     Sharing mode flag (default: eExclusive)
 LocalBuffer::LocalBuffer(vk::Device           device,
                          vk::PhysicalDevice   physicalDevice,
-                         vk::DeviceSize       size,
+                         size_t               size,
                          vk::BufferUsageFlags usage,
                          vk::SharingMode      sharingMode /*= vk::SharingMode::eExclusive*/)
     : Buffer(device,
@@ -112,19 +108,21 @@ LocalBuffer::LocalBuffer(vk::Device           device,
 {
 }
 
-//! @param  vk::Device device
-//! @param  vk::PhysicalDevice physicalDevice
-//! @param  vk::DeviceSize size
-//! @param  vk::BufferUsageFlags usage
-//! @param  void const * src
-//! @param  vk::SharingMode sharingMode
+//! @param  device          Logical device associated with the buffer
+//! @param  physicalDevice  Physical device associated with the buffer's allocation
+//! @param  commandPool     Command pool used to initialize the buffer
+//! @param  queue           Queue used to initialize the buffer
+//! @param  size            Nominal size of the buffer
+//! @param  usage           Usage flags
+//! @param  src             Data to be copied into the buffer
+//! @param  sharingMode     Sharing mode flag (default: eExclusive)
 LocalBuffer::LocalBuffer(vk::Device           device,
                          vk::PhysicalDevice   physicalDevice,
-                         vk::DeviceSize       size,
-                         vk::BufferUsageFlags usage,
-                         void const *         src,
                          vk::CommandPool      commandPool,
                          vk::Queue            queue,
+                         size_t               size,
+                         vk::BufferUsageFlags usage,
+                         void const *         src,
                          vk::SharingMode      sharingMode /*= vk::SharingMode::eExclusive*/)
     : Buffer(device,
              physicalDevice,
@@ -135,11 +133,12 @@ LocalBuffer::LocalBuffer(vk::Device           device,
     set(device, physicalDevice, commandPool, queue, src, size);
 }
 
-//! @param  vk::Device device
-//! @param  vk::PhysicalDevice physicalDevice
-//! @param  vk::CommandPool commandPool
-//! @param  vk::Queue queue
-//! @param  void const * src
+//! @param  device          Logical device associated with the buffer
+//! @param  physicalDevice  Physical device associated with the buffer's allocation
+//! @param  commandPool     Command pool used to copy data into the buffer
+//! @param  queue           Queue used to copy data into the buffer
+//! @param  src             Data to be copied into the buffer
+//! @param  size            Size of the data to copy
 void LocalBuffer::set(vk::Device         device,
                       vk::PhysicalDevice physicalDevice,
                       vk::CommandPool    commandPool,
@@ -152,6 +151,18 @@ void LocalBuffer::set(vk::Device         device,
                          size,
                          vk::BufferUsageFlagBits::eTransferSrc,
                          src);
-    copySynced(device, physicalDevice, commandPool, queue, staging, size);
+    copySynched(device, physicalDevice, commandPool, queue, staging, size);
+}
+
+void LocalBuffer::copySynched(vk::Device         device,
+                              vk::PhysicalDevice physicalDevice,
+                              vk::CommandPool    commandPool,
+                              vk::Queue          queue,
+                              Buffer &           src,
+                              size_t             size)
+{
+    executeOnceSynched(device, commandPool, queue, [&src, this, size] (vk::CommandBuffer commands) {
+                           commands.copyBuffer(src, this->buffer_.get(), vk::BufferCopy(0, 0, size));
+                       });
 }
 } // namespace Vkx

@@ -7,6 +7,7 @@ find_package(glm)
 find_package(Vulkan)
 
 set(VKTUTORIAL_SOURCES
+    stb_image.h
     vktutorial.cpp
 )
 source_group(Sources FILES ${VKTUTORIAL_SOURCES})
@@ -68,10 +69,10 @@ add_custom_target(
 add_dependencies(vktutorial shaders)
 
 add_custom_command(TARGET vktutorial POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:vktutorial>/shaders/"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/textures/"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${PROJECT_BINARY_DIR}/shaders"
-        "$<TARGET_FILE_DIR:vktutorial>/shaders"
+        "${CMAKE_SOURCE_DIR}/textures"
+        "${PROJECT_BINARY_DIR}/textures"
         )
 
 add_subdirectory(Glfwx)

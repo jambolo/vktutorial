@@ -24,26 +24,27 @@ public:
            vk::MemoryPropertyFlags memoryProperties,
            vk::SharingMode         sharingMode = vk::SharingMode::eExclusive);
 
-    //! Copies a buffer to this one and waits for the copy operation to finish.
-    void copySynced(vk::Device         device,
-                    vk::PhysicalDevice physicalDevice,
-                    vk::CommandPool    commandPool,
-                    vk::Queue          queue,
-                    Buffer const &     src,
-                    size_t             size);
+    //! Move constructor
+    Buffer(Buffer && rhs);
+
+    //! Destructor.
+    virtual ~Buffer() = default;
+
+    //! Move-assignment operator
+    Buffer & operator =(Buffer && rhs);
 
     //! Implicitly converts into a vk::Buffer.
     operator vk::Buffer() { return buffer_.get(); }
 
     //! Returns the DeviceMemory handle.
-    vk::DeviceMemory allocation() { return allocation_.get(); }
+    vk::DeviceMemory allocation() const { return allocation_.get(); }
 
 protected:
-
-    vk::UniqueDeviceMemory allocation_; //!< Allocation
-    vk::UniqueBuffer buffer_;           //!< Buffer
+    vk::UniqueDeviceMemory allocation_; //!< Buffer allocation
+    vk::UniqueBuffer buffer_;           //!< Vulkan buffer
 };
 
+//! A buffer that visible to CPU and automatically kept in sync (eHostVisible | eHostCoherent).
 class GlobalBuffer : public Buffer
 {
 public:
@@ -58,8 +59,8 @@ public:
                  void const *         src         = nullptr,
                  vk::SharingMode      sharingMode = vk::SharingMode::eExclusive);
 
-    //! Copies memory into the buffer
-    void set(vk::Device device, void const * src, size_t offset, size_t size);
+    //! Copies CPU memory into the buffer
+    void set(vk::Device device, size_t offset, void const * src, size_t size);
 };
 
 class LocalBuffer : public Buffer
@@ -78,11 +79,11 @@ public:
     //! Constructor.
     LocalBuffer(vk::Device           device,
                 vk::PhysicalDevice   physicalDevice,
+                vk::CommandPool      commandPool,
+                vk::Queue            queue,
                 size_t               size,
                 vk::BufferUsageFlags usage,
                 void const *         src,
-                vk::CommandPool      commandPool,
-                vk::Queue            queue,
                 vk::SharingMode      sharingMode = vk::SharingMode::eExclusive);
 
     //! Copies data from CPU memory into the buffer
@@ -92,6 +93,14 @@ public:
              vk::Queue          queue,
              void const *       src,
              size_t             size);
+
+private:
+    void copySynched(vk::Device         device,
+                     vk::PhysicalDevice physicalDevice,
+                     vk::CommandPool    commandPool,
+                     vk::Queue          queue,
+                     Buffer &           src,
+                     size_t             size);
 };
 } // namespace Vkx
 

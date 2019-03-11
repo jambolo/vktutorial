@@ -7,6 +7,8 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include <functional>
+
 //! Extensions to Vulkan
 namespace Vkx
 {
@@ -32,6 +34,12 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
 //! Finds an appropriate memory type provided by the physical device.
 uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties);
 
+//! Creates and executes a one-time command buffer.
+void executeOnceSynched(vk::Device                             device,
+                        vk::CommandPool                        commandPool,
+                        vk::Queue                              queue,
+                        std::function<void(vk::CommandBuffer)> commands);
+
 namespace ColorComponentFlags
 {
     //! All colors
@@ -52,8 +60,8 @@ namespace MessageSeverityFlags
     //! All message severities
     vk::DebugUtilsMessageSeverityFlagsEXT const all = vk::DebugUtilsMessageSeverityFlagsEXT(
         vk::FlagTraits<vk::DebugUtilsMessageSeverityFlagBitsEXT>::allFlags);                                                                                     //!<
-                                                                                                                                                                 //!< All
-                                                                                                                                                                 //!< severities
+    //!< All
+    //!< severities
 }
 }
 } // namespace Vkx

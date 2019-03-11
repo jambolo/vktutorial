@@ -1,6 +1,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include "Glfwx/Glfwx.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 #include "Vkx/Buffer.h"
+#include "Vkx/Image.h"
 #include "Vkx/Vkx.h"
 
 #define GLM_FORCE_RADIANS
@@ -183,6 +186,8 @@ private:
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPools();
+        createTextureImage();
+        createTextureImageView();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -470,18 +475,11 @@ private:
 
     void createImageViews()
     {
-        vk::ImageSubresourceRange subresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         swapChainImageViews_.reserve(swapChainImages_.size());
         for (auto const & image : swapChainImages_)
         {
-            swapChainImageViews_.push_back(
-                device_->createImageViewUnique(
-                    vk::ImageViewCreateInfo({},
-                                            image,
-                                            vk::ImageViewType::e2D,
-                                            swapChainImageFormat_,
-                                            vk::ComponentMapping(),
-                                            subresourceRange)));
+            view = Vkx::ImageView(view, device_, image, swapChainImageFormat_);
+            swapChainImageViews_.push_back();
         }
     }
 
@@ -606,31 +604,61 @@ private:
                                       graphicsFamily_));
     }
 
+    void createTextureImage()
+    {
+        int       texWidth, texHeight, texChannels;
+        stbi_uc * pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        if (!pixels)
+            throw std::runtime_error("createTextureImage: failed to load texture image!");
+        VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+        textureImage_ = Vkx::LocalImage(device_.get(),
+                                        physicalDevice_,
+                                        transientCommandPool_.get(),
+                                        graphicsQueue_,
+                                        vk::ImageCreateInfo({},
+                                                            vk::ImageType::e2D,
+                                                            vk::Format::eR8G8B8A8Unorm,
+                                                            { (uint32_t)texWidth, (uint32_t)texHeight, 1 },
+                                                            1,
+                                                            1,
+                                                            vk::SampleCountFlagBits::e1,
+                                                            vk::ImageTiling::eOptimal,
+                                                            vk::ImageUsageFlagBits::eSampled),
+                                        pixels,
+                                        imageSize);
+        stbi_image_free(pixels);
+    }
+
+    void createTextureImageView()
+    {
+    }
+
     void createVertexBuffer()
     {
         vertexBuffer_ = Vkx::LocalBuffer(device_.get(),
                                          physicalDevice_,
+                                         transientCommandPool_.get(),
+                                         graphicsQueue_,
                                          sizeof(vertices),
                                          vk::BufferUsageFlagBits::eVertexBuffer,
-                                         vertices,
-                                         transientCommandPool_.get(),
-                                         graphicsQueue_);
+                                         vertices);
     }
 
     void createIndexBuffer()
     {
         indexBuffer_ = Vkx::LocalBuffer(device_.get(),
                                         physicalDevice_,
+                                        transientCommandPool_.get(),
+                                        graphicsQueue_,
                                         sizeof(indices),
                                         vk::BufferUsageFlagBits::eIndexBuffer,
-                                        indices,
-                                        transientCommandPool_.get(),
-                                        graphicsQueue_);
+                                        indices);
     }
 
     void createUniformBuffers()
     {
-        vk::DeviceSize size = sizeof(UniformBufferObject);
+        size_t size = sizeof(UniformBufferObject);
         uniformBuffers_.reserve(swapChainImages_.size());
 
         for (size_t i = 0; i < swapChainImages_.size(); ++i)
@@ -787,7 +815,7 @@ private:
         // this, then the image will be rendered upside down."
         ubo.projection[1][1] *= -1;   // This has got to go
 
-        uniformBuffers_[index].set(device_.get(), &ubo, 0, sizeof(ubo));
+        uniformBuffers_[index].set(device_.get(), 0, &ubo, sizeof(ubo));
     }
 
     void resetSwapChain()
@@ -846,6 +874,7 @@ private:
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
     vk::UniqueCommandPool transientCommandPool_;
+    Vkx::LocalImage textureImage_;
     Vkx::LocalBuffer vertexBuffer_;
     Vkx::LocalBuffer indexBuffer_;
     std::vector<Vkx::GlobalBuffer> uniformBuffers_;
