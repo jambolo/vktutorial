@@ -18,7 +18,7 @@ class Buffer;
 bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, char const * name);
 
 //! Returns true if all extensions are supported by the device.
-bool allExtensionsSupported(vk::PhysicalDevice device, std::vector<char const *> const & extensions);
+bool allExtensionsSupported(vk::PhysicalDevice const & physicalDevice, std::vector<char const *> const & extensions);
 
 //! Returns true if the layer is available.
 bool layerIsAvailable(std::vector<vk::LayerProperties> layers, char const * name);
@@ -32,12 +32,12 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
                                   vk::ShaderModuleCreateFlags flags = vk::ShaderModuleCreateFlags());
 
 //! Finds an appropriate memory type provided by the physical device.
-uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties);
+uint32_t findAppropriateMemoryType(vk::PhysicalDevice const & physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties);
 
 //! Creates and executes a one-time command buffer.
-void executeOnceSynched(vk::Device                             device,
-                        vk::CommandPool                        commandPool,
-                        vk::Queue                              queue,
+void executeOnceSynched(vk::Device const &                     device,
+                        vk::CommandPool const &                commandPool,
+                        vk::Queue const &                      queue,
                         std::function<void(vk::CommandBuffer)> commands);
 
 namespace ColorComponentFlags

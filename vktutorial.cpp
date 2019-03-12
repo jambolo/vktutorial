@@ -84,10 +84,10 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions
 // This is the vertex data that is loaded into the vertex buffer. It must match the attribute descriptions.
 static Vertex const vertices[] =
 {
-    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-    { {  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-    { {  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-    { { -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
+    {{ -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    {{  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    {{  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    {{ -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
 };
 
 const uint16_t indices[] =
@@ -244,7 +244,7 @@ private:
         // Find a physical device that has the appropriate functionality for what we need.
         physicalDevice_ = firstSuitablePhysicalDevice();
 
-#if !defined(NDEBUG)
+#if 0
         {
             vk::PhysicalDeviceProperties properties = physicalDevice_.getProperties();
 
@@ -274,7 +274,7 @@ private:
                           << std::endl;
             }
         }
-#endif  // if !defined(NDEBUG)
+#endif  // if 0
     }
 
     vk::PhysicalDevice firstSuitablePhysicalDevice()
@@ -333,14 +333,14 @@ private:
         vk::PhysicalDeviceFeatures deviceFeatures;
         deviceFeatures.setSamplerAnisotropy(VK_TRUE);
 
-        vk::DeviceCreateInfo       createInfo({},
-                                              (uint32_t)queueCreateInfos.size(),
-                                              queueCreateInfos.data(),
-                                              0,
-                                              nullptr,
-                                              (int)DEVICE_EXTENSIONS.size(),
-                                              DEVICE_EXTENSIONS.data(),
-                                              &deviceFeatures);
+        vk::DeviceCreateInfo createInfo({},
+                                        (uint32_t)queueCreateInfos.size(),
+                                        queueCreateInfos.data(),
+                                        0,
+                                        nullptr,
+                                        (int)DEVICE_EXTENSIONS.size(),
+                                        DEVICE_EXTENSIONS.data(),
+                                        &deviceFeatures);
         if (VALIDATION_LAYERS_REQUESTED)
         {
             createInfo.setPpEnabledLayerNames(VALIDATION_LAYERS.data());
@@ -433,12 +433,12 @@ private:
         {
             swapChainImageViews_.push_back(
                 device_->createImageViewUnique(
-                  vk::ImageViewCreateInfo({},
-                                          image,
-                                          vk::ImageViewType::e2D,
-                                          swapChainImageFormat_,
-                                          vk::ComponentMapping(),
-                                          vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))));
+                    vk::ImageViewCreateInfo({},
+                                            image,
+                                            vk::ImageViewType::e2D,
+                                            swapChainImageFormat_,
+                                            vk::ComponentMapping(),
+                                            vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))));
         }
     }
 
@@ -542,7 +542,6 @@ private:
                                            1,
                                            vk::ShaderStageFlagBits::eVertex)
         };
-
 
         descriptorSetLayout_ = device_->createDescriptorSetLayoutUnique(
             vk::DescriptorSetLayoutCreateInfo({}, 2, bindings));
@@ -651,12 +650,12 @@ private:
                                         imageSize);
         stbi_image_free(pixels);
         textureImageView_ = device_->createImageViewUnique(
-             vk::ImageViewCreateInfo({},
-                                     textureImage_,
-                                     vk::ImageViewType::e2D,
-                                     textureImage_.info().format,
-                                     vk::ComponentMapping(),
-                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)));
+            vk::ImageViewCreateInfo({},
+                                    textureImage_,
+                                    vk::ImageViewType::e2D,
+                                    textureImage_.info().format,
+                                    vk::ComponentMapping(),
+                                    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)));
     }
 
     void createTextureSampler()
@@ -732,19 +731,19 @@ private:
         for (size_t i = 0; i < swapChainImages_.size(); ++i)
         {
             vk::DescriptorBufferInfo uboInfo(uniformBuffers_[i], 0, sizeof(UniformBufferObject));
-            vk::DescriptorImageInfo imageInfo(textureSampler_.get(),
-                                              textureImageView_.get(),
-                                              vk::ImageLayout::eShaderReadOnlyOptimal);
-            vk::WriteDescriptorSet   writeDescriptorSets[] =
+            vk::DescriptorImageInfo  imageInfo(textureSampler_.get(),
+                                               textureImageView_.get(),
+                                               vk::ImageLayout::eShaderReadOnlyOptimal);
+            vk::WriteDescriptorSet writeDescriptorSets[] =
             {
                 vk::WriteDescriptorSet(descriptorSets_[i],
-                                                        0,
-                                                        0,
-                                                        1,
-                                                        vk::DescriptorType::eUniformBuffer,
-                                                        nullptr,
-                                                        &uboInfo,
-                                                        nullptr),
+                                       0,
+                                       0,
+                                       1,
+                                       vk::DescriptorType::eUniformBuffer,
+                                       nullptr,
+                                       &uboInfo,
+                                       nullptr),
                 vk::WriteDescriptorSet(descriptorSets_[i],
                                        1,
                                        0,
@@ -753,7 +752,6 @@ private:
                                        &imageInfo,
                                        nullptr,
                                        nullptr),
-
             };
             device_->updateDescriptorSets(2, writeDescriptorSets, 0, nullptr);
         }
@@ -943,7 +941,7 @@ private:
     vk::UniqueSampler textureSampler_;
     Vkx::LocalBuffer vertexBuffer_;
     Vkx::LocalBuffer indexBuffer_;
-    std::vector<Vkx::GlobalBuffer> uniformBuffers_;
+    std::vector<Vkx::HostBuffer> uniformBuffers_;
     vk::UniqueDescriptorPool descriptorPool_;
     std::vector<vk::DescriptorSet> descriptorSets_;
     std::vector<vk::UniqueCommandBuffer> commandBuffers_;

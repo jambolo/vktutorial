@@ -17,12 +17,12 @@ public:
     Buffer() = default;
 
     //! Constructor.
-    Buffer(vk::Device              device,
-           vk::PhysicalDevice      physicalDevice,
-           size_t                  size,
-           vk::BufferUsageFlags    usage,
-           vk::MemoryPropertyFlags memoryProperties,
-           vk::SharingMode         sharingMode = vk::SharingMode::eExclusive);
+    Buffer(vk::Device const &         device,
+           vk::PhysicalDevice const & physicalDevice,
+           size_t                     size,
+           vk::BufferUsageFlags       usage,
+           vk::MemoryPropertyFlags    memoryProperties,
+           vk::SharingMode            sharingMode = vk::SharingMode::eExclusive);
 
     //! Move constructor
     Buffer(Buffer && src);
@@ -44,25 +44,26 @@ protected:
     vk::UniqueBuffer buffer_;           //!< Vulkan buffer
 };
 
-//! A buffer that visible to CPU and automatically kept in sync (eHostVisible | eHostCoherent).
-class GlobalBuffer : public Buffer
+//! A Buffer that is visible to the CPU and is automatically kept in sync (eHostVisible | eHostCoherent).
+class HostBuffer : public Buffer
 {
 public:
     //! Constructor.
-    GlobalBuffer() = default;
+    HostBuffer() = default;
 
     //! Constructor.
-    GlobalBuffer(vk::Device           device,
-                 vk::PhysicalDevice   physicalDevice,
-                 size_t               size,
-                 vk::BufferUsageFlags usage,
-                 void const *         src         = nullptr,
-                 vk::SharingMode      sharingMode = vk::SharingMode::eExclusive);
+    HostBuffer(vk::Device const &         device,
+               vk::PhysicalDevice const & physicalDevice,
+               size_t                     size,
+               vk::BufferUsageFlags       usage,
+               void const *               src         = nullptr,
+               vk::SharingMode            sharingMode = vk::SharingMode::eExclusive);
 
     //! Copies CPU memory into the buffer
-    void set(vk::Device device, size_t offset, void const * src, size_t size);
+    void set(vk::Device const & device, size_t offset, void const * src, size_t size);
 };
 
+//! A Buffer that is visible only to the GPU (eDeviceLocal).
 class LocalBuffer : public Buffer
 {
 public:
@@ -70,37 +71,37 @@ public:
     LocalBuffer() = default;
 
     //! Constructor.
-    LocalBuffer(vk::Device           device,
-                vk::PhysicalDevice   physicalDevice,
-                size_t               size,
-                vk::BufferUsageFlags usage,
-                vk::SharingMode      sharingMode = vk::SharingMode::eExclusive);
+    LocalBuffer(vk::Device const &         device,
+                vk::PhysicalDevice const & physicalDevice,
+                size_t                     size,
+                vk::BufferUsageFlags       usage,
+                vk::SharingMode            sharingMode = vk::SharingMode::eExclusive);
 
     //! Constructor.
-    LocalBuffer(vk::Device           device,
-                vk::PhysicalDevice   physicalDevice,
-                vk::CommandPool      commandPool,
-                vk::Queue            queue,
-                size_t               size,
-                vk::BufferUsageFlags usage,
-                void const *         src,
-                vk::SharingMode      sharingMode = vk::SharingMode::eExclusive);
+    LocalBuffer(vk::Device const &         device,
+                vk::PhysicalDevice const & physicalDevice,
+                vk::CommandPool const &    commandPool,
+                vk::Queue const &          queue,
+                size_t                     size,
+                vk::BufferUsageFlags       usage,
+                void const *               src,
+                vk::SharingMode            sharingMode = vk::SharingMode::eExclusive);
 
     //! Copies data from CPU memory into the buffer
-    void set(vk::Device         device,
-             vk::PhysicalDevice physicalDevice,
-             vk::CommandPool    commandPool,
-             vk::Queue          queue,
-             void const *       src,
-             size_t             size);
+    void set(vk::Device const &         device,
+             vk::PhysicalDevice const & physicalDevice,
+             vk::CommandPool const &    commandPool,
+             vk::Queue const &          queue,
+             void const *               src,
+             size_t                     size);
 
 private:
-    void copySynched(vk::Device         device,
-                     vk::PhysicalDevice physicalDevice,
-                     vk::CommandPool    commandPool,
-                     vk::Queue          queue,
-                     Buffer &           src,
-                     size_t             size);
+    void copySynched(vk::Device const &         device,
+                     vk::PhysicalDevice const & physicalDevice,
+                     vk::CommandPool const &    commandPool,
+                     vk::Queue const &          queue,
+                     Buffer &                   src,
+                     size_t                     size);
 };
 } // namespace Vkx
 

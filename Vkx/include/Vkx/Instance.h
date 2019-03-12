@@ -7,15 +7,18 @@
 
 namespace Vkx
 {
+//! A RAII extension to vk::Instance.
 class Instance : private vk::Instance
 {
 public:
+    //! Constructor.
     Instance(vk::InstanceCreateInfo const & info);
+
     ~Instance();
 
-    using vk::Instance::operator==;
-    using vk::Instance::operator!=;
-    using vk::Instance::operator<;
+    using vk::Instance::operator ==;
+    using vk::Instance::operator !=;
+    using vk::Instance::operator <;
 
     using vk::Instance::enumeratePhysicalDevices;
     using vk::Instance::getProcAddr;
@@ -84,8 +87,6 @@ public:
 
     using vk::Instance::operator VkInstance;
 };
-
 } // namespace Vkx
-
 
 #endif // !defined(VKX_INSTANCE_H)

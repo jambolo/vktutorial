@@ -12,13 +12,13 @@ namespace Vkx
 //! @param  info                Creation info
 //! @param  memoryProperties    Memory properties
 //!
-//! @warn       A std::runtime_error is thrown if the image cannot be created and allocated
+//! @warning       A std::runtime_error is thrown if the image cannot be created and allocated
 //! @todo       "... you're not supposed to actually call vkAllocateMemory for every individual image. ... The right way to
 //!             allocate memory for a large number of objects at the same time is to create a custom allocator that splits up a
 //!             single allocation among many different objects by using the offset parameters that we've seen in many functions."
 
-Image::Image(vk::Device                  device,
-             vk::PhysicalDevice          physicalDevice,
+Image::Image(vk::Device const &          device,
+             vk::PhysicalDevice const &  physicalDevice,
              vk::ImageCreateInfo const & info,
              vk::MemoryPropertyFlags     memoryProperties)
     : info_(info)
@@ -57,11 +57,11 @@ Image & Image::operator =(Image && rhs)
 //! @param  info
 //! @param  size
 //! @param  src
-GlobalImage::GlobalImage(vk::Device                  device,
-                         vk::PhysicalDevice          physicalDevice,
-                         vk::ImageCreateInfo const & info,
-                         void const *                src /*= nullptr*/,
-                         size_t                      size /*= 0*/)
+HostImage::HostImage(vk::Device const &          device,
+                     vk::PhysicalDevice const &  physicalDevice,
+                     vk::ImageCreateInfo const & info,
+                     void const *                src /*= nullptr*/,
+                     size_t                      size /*= 0*/)
     : Image(device,
             physicalDevice,
             info,
@@ -75,7 +75,7 @@ GlobalImage::GlobalImage(vk::Device                  device,
 //! @param  src
 //! @param  offset
 //! @param  size
-void GlobalImage::set(vk::Device device, void const * src, size_t offset, size_t size)
+void HostImage::set(vk::Device const & device, void const * src, size_t offset, size_t size)
 {
     char * data = (char *)device.mapMemory(allocation(), 0, size, vk::MemoryMapFlags());
     memcpy(data + offset, src, size);
@@ -87,9 +87,9 @@ void GlobalImage::set(vk::Device device, void const * src, size_t offset, size_t
 //! @param  info
 //!
 //! @note       eTransferDst is automatically added to info.usage flags
-LocalImage::LocalImage(vk::Device          device,
-                       vk::PhysicalDevice  physicalDevice,
-                       vk::ImageCreateInfo info)
+LocalImage::LocalImage(vk::Device const &         device,
+                       vk::PhysicalDevice const & physicalDevice,
+                       vk::ImageCreateInfo        info)
     : Image(device,
             physicalDevice,
             info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
@@ -104,13 +104,13 @@ LocalImage::LocalImage(vk::Device          device,
 //! @param  info
 //! @param  src
 //! @param  size
-LocalImage::LocalImage(vk::Device          device,
-                       vk::PhysicalDevice  physicalDevice,
-                       vk::CommandPool     commandPool,
-                       vk::Queue           queue,
-                       vk::ImageCreateInfo info,
-                       void const *        src,
-                       size_t              size)
+LocalImage::LocalImage(vk::Device const &         device,
+                       vk::PhysicalDevice const & physicalDevice,
+                       vk::CommandPool const &    commandPool,
+                       vk::Queue const &          queue,
+                       vk::ImageCreateInfo        info,
+                       void const *               src,
+                       size_t                     size)
     : Image(device,
             physicalDevice,
             info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
@@ -125,23 +125,23 @@ LocalImage::LocalImage(vk::Device          device,
 //! @param  queue
 //! @param  src
 //! @param  size
-void LocalImage::set(vk::Device         device,
-                     vk::PhysicalDevice physicalDevice,
-                     vk::CommandPool    commandPool,
-                     vk::Queue          queue,
-                     void const *       src,
-                     size_t             size)
+void LocalImage::set(vk::Device const &         device,
+                     vk::PhysicalDevice const & physicalDevice,
+                     vk::CommandPool const &    commandPool,
+                     vk::Queue const &          queue,
+                     void const *               src,
+                     size_t                     size)
 {
     transitionLayout(device,
                      commandPool,
                      queue,
                      vk::ImageLayout::eUndefined,
                      vk::ImageLayout::eTransferDstOptimal);
-    GlobalBuffer staging(device,
-                         physicalDevice,
-                         size,
-                         vk::BufferUsageFlagBits::eTransferSrc,
-                         src);
+    HostBuffer staging(device,
+                       physicalDevice,
+                       size,
+                       vk::BufferUsageFlagBits::eTransferSrc,
+                       src);
     copy(device, commandPool, queue, staging);
     transitionLayout(device,
                      commandPool,
@@ -150,10 +150,10 @@ void LocalImage::set(vk::Device         device,
                      vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
-void LocalImage::copy(vk::Device      device,
-                      vk::CommandPool commandPool,
-                      vk::Queue       queue,
-                      vk::Buffer      buffer)
+void LocalImage::copy(vk::Device const &      device,
+                      vk::CommandPool const & commandPool,
+                      vk::Queue const &       queue,
+                      vk::Buffer const &      buffer)
 {
     executeOnceSynched(device,
                        commandPool,
@@ -169,11 +169,11 @@ void LocalImage::copy(vk::Device      device,
                        });
 }
 
-void LocalImage::transitionLayout(vk::Device      device,
-                                  vk::CommandPool commandPool,
-                                  vk::Queue       queue,
-                                  vk::ImageLayout oldLayout,
-                                  vk::ImageLayout newLayout)
+void LocalImage::transitionLayout(vk::Device const &      device,
+                                  vk::CommandPool const & commandPool,
+                                  vk::Queue const &       queue,
+                                  vk::ImageLayout         oldLayout,
+                                  vk::ImageLayout         newLayout)
 {
     vk::PipelineStageFlags srcStage;
     vk::PipelineStageFlags dstStage;

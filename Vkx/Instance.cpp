@@ -4,15 +4,14 @@
 
 namespace Vkx
 {
+//! @param  info    Creation info
 Instance::Instance(vk::InstanceCreateInfo const & info)
     : vk::Instance(vk::createInstance(info))
 {
 }
 
-
 Instance::~Instance()
 {
-    destroy();
+    vk::Instance::destroy();
 }
-
 } // namespace Vkx

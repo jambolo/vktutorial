@@ -25,11 +25,11 @@ bool extensionIsSupported(std::vector<vk::ExtensionProperties> & extensions, cha
     return i != extensions.end();
 }
 
-//! @param  device
+//! @param  physicalDevice
 //! @param  extensions
-bool allExtensionsSupported(vk::PhysicalDevice device, std::vector<char const *> const & extensions)
+bool allExtensionsSupported(vk::PhysicalDevice const & physicalDevice, std::vector<char const *> const & extensions)
 {
-    std::vector<vk::ExtensionProperties> available = device.enumerateDeviceExtensionProperties(nullptr);
+    std::vector<vk::ExtensionProperties> available = physicalDevice.enumerateDeviceExtensionProperties(nullptr);
     for (auto const & required : extensions)
     {
         if (!extensionIsSupported(available, required))
@@ -70,7 +70,7 @@ bool allLayersAvailable(std::vector<char const *> const & requested)
 //!
 //! @return shader module handle
 //!
-//! @warn   std::runtime_error is thrown if the file cannot be opened
+//! @warning   std::runtime_error is thrown if the file cannot be opened
 vk::ShaderModule loadShaderModule(std::string const &         path,
                                   vk::Device &                device,
                                   vk::ShaderModuleCreateFlags flags /*= vk::ShaderModuleCreateFlags()*/)
@@ -78,7 +78,7 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
     // Load the code
     std::ifstream file(path, std::ios::ate | std::ios::binary);
     if (!file.is_open())
-        throw std::runtime_error("Vkx::loadShaderModule: failed to open file");
+        throw std::runtime_error("Vkx::loadShaderModule: failed to open the file");
     size_t fileSize   = (size_t)file.tellg();
     size_t shaderSize = (fileSize + (sizeof(uint32_t) - 1)) / sizeof(uint32_t);
     std::vector<uint32_t> buffer(shaderSize);
@@ -98,7 +98,7 @@ vk::ShaderModule loadShaderModule(std::string const &         path,
 //! @return     index of the type of memory provided by the physical device that matches the request
 //!
 //! @warning    A std::runtime_error is thrown if an appropriate type is not available
-uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties)
+uint32_t findAppropriateMemoryType(vk::PhysicalDevice const & physicalDevice, uint32_t types, vk::MemoryPropertyFlags properties)
 {
     vk::PhysicalDeviceMemoryProperties info = physicalDevice.getMemoryProperties();
     for (uint32_t i = 0; i < info.memoryTypeCount; ++i)
@@ -108,35 +108,8 @@ uint32_t findAppropriateMemoryType(vk::PhysicalDevice physicalDevice, uint32_t t
         if ((info.memoryTypes[i].propertyFlags & properties) == properties)
             return i;
     }
-    throw std::runtime_error("Vkx::findAppropriateMemoryType: failed to find appropriate memory type");
+    throw std::runtime_error("Vkx::findAppropriateMemoryType: failed to find an appropriate memory type");
 }
-
-#if 0
-//! @param  device
-//! @param  src
-//! @param  dst
-//! @param  size
-//! @param  commandPool
-//! @param  queue
-void copyBufferSynced(vk::Device      device,
-                      vk::Buffer      src,
-                      vk::Buffer      dst,
-                      vk::DeviceSize  size,
-                      vk::CommandPool commandPool,
-                      vk::Queue       queue)
-{
-    std::vector<vk::CommandBuffer> commandBuffers = device.allocateCommandBuffers(
-        vk::CommandBufferAllocateInfo(commandPool,
-                                      vk::CommandBufferLevel::ePrimary,
-                                      1));
-    commandBuffers[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-    commandBuffers[0].copyBuffer(src, dst, vk::BufferCopy(0, 0, size));
-    commandBuffers[0].end();
-    queue.submit(vk::SubmitInfo(0, nullptr, nullptr, 1, &commandBuffers[0]), nullptr);
-    vkQueueWaitIdle(queue);
-    device.free(commandPool, 1, &commandBuffers[0]);
-}
-#endif // if 0
 
 //! This function creates a one-time command buffer and executes it. The function returns when the queue is idle.
 //!
@@ -154,9 +127,9 @@ void copyBufferSynced(vk::Device      device,
 //!
 //! @note       commandPool should specify a pool optimized for transient command buffers
 
-void executeOnceSynched(vk::Device                             device,
-                        vk::CommandPool                        commandPool,
-                        vk::Queue                              queue,
+void executeOnceSynched(vk::Device const &                     device,
+                        vk::CommandPool const &                commandPool,
+                        vk::Queue const &                      queue,
                         std::function<void(vk::CommandBuffer)> commands)
 {
     std::vector<vk::UniqueCommandBuffer> commandBuffers = device.allocateCommandBuffersUnique(
