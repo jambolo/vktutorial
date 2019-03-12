@@ -25,7 +25,7 @@ public:
            vk::SharingMode         sharingMode = vk::SharingMode::eExclusive);
 
     //! Move constructor
-    Buffer(Buffer && rhs);
+    Buffer(Buffer && src);
 
     //! Destructor.
     virtual ~Buffer() = default;
@@ -34,7 +34,7 @@ public:
     Buffer & operator =(Buffer && rhs);
 
     //! Implicitly converts into a vk::Buffer.
-    operator vk::Buffer() { return buffer_.get(); }
+    operator vk::Buffer() const { return buffer_.get(); }
 
     //! Returns the DeviceMemory handle.
     vk::DeviceMemory allocation() const { return allocation_.get(); }

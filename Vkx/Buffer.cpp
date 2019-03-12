@@ -37,16 +37,14 @@ Buffer::Buffer(vk::Device              device,
     device.bindBufferMemory(buffer_.get(), allocation_.get(), 0);
 }
 
-//! @param  rhs     Move source
-Buffer::Buffer(Buffer && rhs)
+//! @param  src     Move source
+Buffer::Buffer(Buffer && src)
 {
-    allocation_ = std::move(rhs.allocation_);
-    buffer_     = std::move(rhs.buffer_);
+    allocation_ = std::move(src.allocation_);
+    buffer_     = std::move(src.buffer_);
 }
 
 //! @param  rhs     Move source
-//!
-//! @return Vkx::Buffer::Buffer &
 Buffer & Buffer::operator =(Buffer && rhs)
 {
     if (this != &rhs)

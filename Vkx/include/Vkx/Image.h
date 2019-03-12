@@ -24,7 +24,7 @@ public:
           vk::MemoryPropertyFlags     memoryProperties);
 
     //! Move constructor
-    Image(Image && rhs);
+    Image(Image && src);
 
     //! Destructor.
     virtual ~Image() = default;
@@ -33,10 +33,14 @@ public:
     Image & operator =(Image && rhs);
 
     //! Implicitly converts into a vk::Image.
-    operator vk::Image() { return image_.get(); }
+    operator vk::Image() const { return image_.get(); }
 
     //! Returns the DeviceMemory handle.
     vk::DeviceMemory allocation() const { return allocation_.get(); }
+
+    //! Returns the creation info.
+    vk::ImageCreateInfo info() const { return info_; }
+
 
 protected:
     vk::UniqueDeviceMemory allocation_; //!< The image data
@@ -103,25 +107,6 @@ private:
                           vk::Queue       queue,
                           vk::ImageLayout oldLayout,
                           vk::ImageLayout newLayout);
-};
-
-class ImageView
-{
-public:
-    ImageView(vk::Device device, vk::Image const & image, vk::Format format)
-    {
-        vk::ImageSubresourceRange subresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-        view_ = device.createImageViewUnique(
-            vk::ImageViewCreateInfo({},
-                                    image,
-                                    vk::ImageViewType::e2D,
-                                    format,
-                                    vk::ComponentMapping(),
-                                    subresourceRange));
-    }
-
-private:
-    vk::UniqueImageView view_;
 };
 }
 

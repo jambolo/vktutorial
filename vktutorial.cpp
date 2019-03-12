@@ -47,6 +47,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     // Returns the create info for this vertex format (assumes one binding)
     static vk::PipelineVertexInputStateCreateInfo vertexInputInfo()
@@ -61,7 +62,7 @@ struct Vertex
 
 private:
     static vk::VertexInputBindingDescription bindingDescription_;
-    static std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions_;
+    static std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions_;
 };
 
 // This is the layout of the vertices, basically initial offset and stride
@@ -71,21 +72,22 @@ vk::VertexInputBindingDescription Vertex::bindingDescription_ =
 };
 
 // This describes the format, index, and positions of the vertex attributes, one entry for each attribute
-std::array<vk::VertexInputAttributeDescription, 2> Vertex::attributeDescriptions_ =
+std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions_ =
 {
     {
         { 0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos) },
-        { 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) }
+        { 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) },
+        { 2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord) }
     }
 };
 
 // This is the vertex data that is loaded into the vertex buffer. It must match the attribute descriptions.
 static Vertex const vertices[] =
 {
-    {{ -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
-    {{ 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
-    {{ 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
-    {{ -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } }
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    { {  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    { {  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    { { -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
 };
 
 const uint16_t indices[] =
@@ -180,14 +182,13 @@ private:
         choosePhysicalDevice();
         createLogicalDevice();
         createSwapChain();
-        createImageViews();
         createRenderPass();
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPools();
         createTextureImage();
-        createTextureImageView();
+        createTextureSampler();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -303,7 +304,10 @@ private:
             SwapChainSupportInfo swapChainSupport = querySwapChainSupport(device);
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
-        return extensionsSupported && swapChainAdequate;
+
+        vk::PhysicalDeviceFeatures supportedFeatures = device.getFeatures();
+
+        return extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
     }
 
     SwapChainSupportInfo querySwapChainSupport(vk::PhysicalDevice const & device)
@@ -327,6 +331,8 @@ private:
             queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), presentFamily_, 1, &priority);
 
         vk::PhysicalDeviceFeatures deviceFeatures;
+        deviceFeatures.setSamplerAnisotropy(VK_TRUE);
+
         vk::DeviceCreateInfo       createInfo({},
                                               (uint32_t)queueCreateInfos.size(),
                                               queueCreateInfos.data(),
@@ -421,6 +427,19 @@ private:
         swapChainImageFormat_   = surfaceFormat.format;
         swapChainExtent_        = extent;
         framebufferSizeChanged_ = false;
+
+        swapChainImageViews_.reserve(swapChainImages_.size());
+        for (auto const & image : swapChainImages_)
+        {
+            swapChainImageViews_.push_back(
+                device_->createImageViewUnique(
+                  vk::ImageViewCreateInfo({},
+                                          image,
+                                          vk::ImageViewType::e2D,
+                                          swapChainImageFormat_,
+                                          vk::ComponentMapping(),
+                                          vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))));
+        }
     }
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const & available)
@@ -473,16 +492,6 @@ private:
         }
     }
 
-    void createImageViews()
-    {
-        swapChainImageViews_.reserve(swapChainImages_.size());
-        for (auto const & image : swapChainImages_)
-        {
-            view = Vkx::ImageView(view, device_, image, swapChainImageFormat_);
-            swapChainImageViews_.push_back();
-        }
-    }
-
     void createRenderPass()
     {
         vk::AttachmentDescription colorAttachment({},
@@ -522,8 +531,21 @@ private:
 
     void createDescriptorSetLayout()
     {
-        vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex);
-        descriptorSetLayout_ = device_->createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo({}, 1, &binding));
+        vk::DescriptorSetLayoutBinding bindings[] =
+        {
+            vk::DescriptorSetLayoutBinding(1,
+                                           vk::DescriptorType::eCombinedImageSampler,
+                                           1,
+                                           vk::ShaderStageFlagBits::eFragment),
+            vk::DescriptorSetLayoutBinding(0,
+                                           vk::DescriptorType::eUniformBuffer,
+                                           1,
+                                           vk::ShaderStageFlagBits::eVertex)
+        };
+
+
+        descriptorSetLayout_ = device_->createDescriptorSetLayoutUnique(
+            vk::DescriptorSetLayoutCreateInfo({}, 2, bindings));
     }
 
     void createGraphicsPipeline()
@@ -628,10 +650,34 @@ private:
                                         pixels,
                                         imageSize);
         stbi_image_free(pixels);
+        textureImageView_ = device_->createImageViewUnique(
+             vk::ImageViewCreateInfo({},
+                                     textureImage_,
+                                     vk::ImageViewType::e2D,
+                                     textureImage_.info().format,
+                                     vk::ComponentMapping(),
+                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)));
     }
 
-    void createTextureImageView()
+    void createTextureSampler()
     {
+        textureSampler_ = device_->createSamplerUnique(
+            vk::SamplerCreateInfo({},
+                                  vk::Filter::eLinear,
+                                  vk::Filter::eLinear,
+                                  vk::SamplerMipmapMode::eLinear,
+                                  vk::SamplerAddressMode::eRepeat,
+                                  vk::SamplerAddressMode::eRepeat,
+                                  vk::SamplerAddressMode::eRepeat,
+                                  0.0f,
+                                  VK_TRUE,
+                                  16,
+                                  VK_FALSE,
+                                  vk::CompareOp::eAlways,
+                                  0.0f,
+                                  0.0f,
+                                  vk::BorderColor::eIntOpaqueBlack,
+                                  VK_FALSE));
     }
 
     void createVertexBuffer()
@@ -669,28 +715,47 @@ private:
 
     void createDescriptorPool()
     {
-        vk::DescriptorPoolSize       poolSize(vk::DescriptorType::eUniformBuffer, (uint32_t)swapChainImages_.size());
-        vk::DescriptorPoolCreateInfo poolInfo({}, (uint32_t)swapChainImages_.size(), 1, &poolSize);
-        descriptorPool_ = device_->createDescriptorPoolUnique(poolInfo);
+        vk::DescriptorPoolSize poolSizes[] =
+        {
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, (uint32_t)swapChainImages_.size()),
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, (uint32_t)swapChainImages_.size())
+        };
+        descriptorPool_ = device_->createDescriptorPoolUnique(
+            vk::DescriptorPoolCreateInfo({}, (uint32_t)swapChainImages_.size(), 2, poolSizes));
     }
 
     void createDescriptorSets()
     {
         std::vector<vk::DescriptorSetLayout> layouts(swapChainImages_.size(), descriptorSetLayout_.get());
-        vk::DescriptorSetAllocateInfo        allocInfo(descriptorPool_.get(), (uint32_t)swapChainImages_.size(), layouts.data());
-        descriptorSets_ = device_->allocateDescriptorSets(allocInfo);
+        descriptorSets_ = device_->allocateDescriptorSets(
+            vk::DescriptorSetAllocateInfo(descriptorPool_.get(), (uint32_t)layouts.size(), layouts.data()));
         for (size_t i = 0; i < swapChainImages_.size(); ++i)
         {
-            vk::DescriptorBufferInfo bufferInfo(uniformBuffers_[i], 0, sizeof(UniformBufferObject));
-            vk::WriteDescriptorSet   writeDescriptorSet(descriptorSets_[i],
+            vk::DescriptorBufferInfo uboInfo(uniformBuffers_[i], 0, sizeof(UniformBufferObject));
+            vk::DescriptorImageInfo imageInfo(textureSampler_.get(),
+                                              textureImageView_.get(),
+                                              vk::ImageLayout::eShaderReadOnlyOptimal);
+            vk::WriteDescriptorSet   writeDescriptorSets[] =
+            {
+                vk::WriteDescriptorSet(descriptorSets_[i],
                                                         0,
                                                         0,
                                                         1,
                                                         vk::DescriptorType::eUniformBuffer,
                                                         nullptr,
-                                                        &bufferInfo,
-                                                        nullptr);
-            device_->updateDescriptorSets(1, &writeDescriptorSet, 0, nullptr);
+                                                        &uboInfo,
+                                                        nullptr),
+                vk::WriteDescriptorSet(descriptorSets_[i],
+                                       1,
+                                       0,
+                                       1,
+                                       vk::DescriptorType::eCombinedImageSampler,
+                                       &imageInfo,
+                                       nullptr,
+                                       nullptr),
+
+            };
+            device_->updateDescriptorSets(2, writeDescriptorSets, 0, nullptr);
         }
     }
 
@@ -844,7 +909,6 @@ private:
         resetSwapChain();
 
         createSwapChain();
-        createImageViews();
         createRenderPass();
         createGraphicsPipeline();
         createFramebuffers();
@@ -875,6 +939,8 @@ private:
     vk::UniqueCommandPool commandPool_;
     vk::UniqueCommandPool transientCommandPool_;
     Vkx::LocalImage textureImage_;
+    vk::UniqueImageView textureImageView_;
+    vk::UniqueSampler textureSampler_;
     Vkx::LocalBuffer vertexBuffer_;
     Vkx::LocalBuffer indexBuffer_;
     std::vector<Vkx::GlobalBuffer> uniformBuffers_;

@@ -26,22 +26,22 @@ Image::Image(vk::Device                  device,
     image_ = device.createImageUnique(info_);
 
     vk::MemoryRequirements requirements = device.getImageMemoryRequirements(image_.get());
-    uint32_t memoryType = Vkx::findAppropriateMemoryType(physicalDevice, requirements.memoryTypeBits, memoryProperties);
+    uint32_t memoryType = findAppropriateMemoryType(physicalDevice, requirements.memoryTypeBits, memoryProperties);
 
     allocation_ = device.allocateMemoryUnique(vk::MemoryAllocateInfo(requirements.size, memoryType));
     device.bindImageMemory(image_.get(), allocation_.get(), 0);
 }
 
-//! @param  rhs     Move source
-Image::Image(Image && rhs)
+//! @param  src     Move source
+Image::Image(Image && src)
 {
-    allocation_ = std::move(rhs.allocation_);
-    image_      = std::move(rhs.image_);
-    info_       = std::move(rhs.info_);
+    allocation_ = std::move(src.allocation_);
+    image_      = std::move(src.image_);
+    info_       = std::move(src.info_);
 }
 
 //! @param  rhs     Move source
-Vkx::Image & Image::operator =(Image && rhs)
+Image & Image::operator =(Image && rhs)
 {
     if (this != &rhs)
     {
@@ -155,7 +155,10 @@ void LocalImage::copy(vk::Device      device,
                       vk::Queue       queue,
                       vk::Buffer      buffer)
 {
-    executeOnceSynched(device, commandPool, queue, [this, &buffer] (vk::CommandBuffer commands) {
+    executeOnceSynched(device,
+                       commandPool,
+                       queue,
+                       [this, &buffer] (vk::CommandBuffer commands) {
                            vk::BufferImageCopy region(0,
                                                       0,
                                                       0,
@@ -207,7 +210,10 @@ void LocalImage::transitionLayout(vk::Device      device,
                                    image_.get(),
                                    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
-    executeOnceSynched(device, commandPool, queue, [srcStage, dstStage, &barrier] (vk::CommandBuffer commands) {
+    executeOnceSynched(device,
+                       commandPool,
+                       queue,
+                       [srcStage, dstStage, &barrier] (vk::CommandBuffer commands) {
                            commands.pipelineBarrier(srcStage, dstStage, {}, nullptr, nullptr, barrier);
                        });
 }
