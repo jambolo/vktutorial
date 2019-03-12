@@ -7,17 +7,31 @@
 
 namespace Vkx
 {
-
+//! A RAII extension to vk::Device.
 class Device
 {
-    Device(vk::PhysicalDevice & physicalDevice, vk::DeviceCreateInfo const & info);
+public:
+    //! Constructor.
+    Device(vk::PhysicalDevice const & physicalDevice, vk::DeviceCreateInfo const & info);
+
+    //! Move constructor.
+    Device(Device && src);
+
     ~Device();
 
+    //! Move-assignment operator
+    Device & operator =(Device && rhs);
+
+    //! Implicitly coverts to vk::Device
+    operator vk::Device() const { return device_; }
+
 private:
+    // Non-copyable
+    Device(Device const &) = delete;
+    Device & operator =(Device const &) = delete;
 
     vk::Device device_;
 };
-
 } // namespace Vkx
 
 #endif // !defined(VKX_DEVICE_H)
