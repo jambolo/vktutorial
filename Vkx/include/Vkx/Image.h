@@ -8,7 +8,7 @@
 
 namespace Vkx
 {
-//! An extension to vk::Image that supports ownership of the memory.
+//! An extension to vk::Image that supports ownership of the memory and the view.
 //!
 //! @note   Instances can be moved, but cannot be copied.
 class Image
@@ -21,7 +21,8 @@ public:
     Image(vk::Device const &          device,
           vk::PhysicalDevice const &  physicalDevice,
           vk::ImageCreateInfo const & info,
-          vk::MemoryPropertyFlags     memoryProperties);
+          vk::MemoryPropertyFlags     memoryProperties,
+          vk::ImageAspectFlags        aspect);
 
     //! Move constructor
     Image(Image && src);
@@ -38,13 +39,17 @@ public:
     //! Returns the DeviceMemory handle.
     vk::DeviceMemory allocation() const { return allocation_.get(); }
 
+    //! Returns the view
+    vk::ImageView view() const { return view_.get(); }
+
     //! Returns the creation info.
     vk::ImageCreateInfo info() const { return info_; }
 
 protected:
+    vk::ImageCreateInfo info_;          //!< Info about the image
     vk::UniqueDeviceMemory allocation_; //!< The image data
     vk::UniqueImage image_;             //!< The image
-    vk::ImageCreateInfo info_;          //!< Info about the image
+    vk::UniqueImageView view_;          //!< The image view
 };
 
 //! An Image that is visible to the CPU and is automatically kept in sync (eHostVisible | eHostCoherent).
@@ -59,7 +64,8 @@ public:
               vk::PhysicalDevice const &  physicalDevice,
               vk::ImageCreateInfo const & info,
               void const *                src = nullptr,
-              size_t                      size = 0);
+              size_t                      size = 0,
+              vk::ImageAspectFlags        aspect = vk::ImageAspectFlagBits::eColor);
 
     //! Copies image data from CPU memory into the image.
     void set(vk::Device const & device, void const * src, size_t offset, size_t size);
@@ -75,7 +81,8 @@ public:
     //! Constructor.
     LocalImage(vk::Device const &         device,
                vk::PhysicalDevice const & physicalDevice,
-               vk::ImageCreateInfo        info);
+               vk::ImageCreateInfo        info,
+               vk::ImageAspectFlags       aspect = vk::ImageAspectFlagBits::eColor);
 
     //! Constructor.
     LocalImage(vk::Device const &         device,
@@ -84,7 +91,8 @@ public:
                vk::Queue const &          queue,
                vk::ImageCreateInfo        info,
                void const *               src,
-               size_t                     size);
+               size_t                     size,
+               vk::ImageAspectFlags       aspect = vk::ImageAspectFlagBits::eColor);
 
     //! Copies data from CPU memory into the image
     void set(vk::Device const &         device,
@@ -94,18 +102,31 @@ public:
              void const *               src,
              size_t                     size);
 
-private:
     void copy(vk::Device const &      device,
               vk::CommandPool const & commandPool,
               vk::Queue const &       queue,
               vk::Buffer const &      buffer);
 
-    //! Transitions the layout of the image
     void transitionLayout(vk::Device const &      device,
                           vk::CommandPool const & commandPool,
                           vk::Queue const &       queue,
                           vk::ImageLayout         oldLayout,
                           vk::ImageLayout         newLayout);
+};
+
+//! A LocalImage for use as a depth buffer (vk::ImageAspect::eDEPTH).
+class DepthImage : public LocalImage
+{
+public:
+    //! Constructor.
+    DepthImage() = default;
+
+    //! Constructor.
+    DepthImage(vk::Device const &         device,
+               vk::PhysicalDevice const & physicalDevice,
+               vk::CommandPool const &    commandPool,
+               vk::Queue const &          queue,
+               vk::ImageCreateInfo        info);
 };
 }
 

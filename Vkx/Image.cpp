@@ -20,7 +20,8 @@ namespace Vkx
 Image::Image(vk::Device const &          device,
              vk::PhysicalDevice const &  physicalDevice,
              vk::ImageCreateInfo const & info,
-             vk::MemoryPropertyFlags     memoryProperties)
+             vk::MemoryPropertyFlags     memoryProperties,
+             vk::ImageAspectFlags        aspect)
     : info_(info)
 {
     image_ = device.createImageUnique(info_);
@@ -30,14 +31,23 @@ Image::Image(vk::Device const &          device,
 
     allocation_ = device.allocateMemoryUnique(vk::MemoryAllocateInfo(requirements.size, memoryType));
     device.bindImageMemory(image_.get(), allocation_.get(), 0);
+
+    view_ = device.createImageViewUnique(
+        vk::ImageViewCreateInfo({},
+                                image_.get(),
+                                vk::ImageViewType::e2D,
+                                info_.format,
+                                vk::ComponentMapping(),
+                                vk::ImageSubresourceRange(aspect, 0, 1, 0, 1)));
 }
 
 //! @param  src     Move source
 Image::Image(Image && src)
 {
+    info_       = std::move(src.info_);
     allocation_ = std::move(src.allocation_);
     image_      = std::move(src.image_);
-    info_       = std::move(src.info_);
+    view_       = std::move(src.view_);
 }
 
 //! @param  rhs     Move source
@@ -45,9 +55,10 @@ Image & Image::operator =(Image && rhs)
 {
     if (this != &rhs)
     {
+        info_       = std::move(rhs.info_);
         allocation_ = std::move(rhs.allocation_);
         image_      = std::move(rhs.image_);
-        info_       = std::move(rhs.info_);
+        view_       = std::move(rhs.view_);
     }
     return *this;
 }
@@ -61,11 +72,13 @@ HostImage::HostImage(vk::Device const &          device,
                      vk::PhysicalDevice const &  physicalDevice,
                      vk::ImageCreateInfo const & info,
                      void const *                src /*= nullptr*/,
-                     size_t                      size /*= 0*/)
+                     size_t                      size /*= 0*/,
+                     vk::ImageAspectFlags        aspect /*= vk::ImageAspectFlagBits::eColor*/)
     : Image(device,
             physicalDevice,
             info,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            aspect)
 {
     if (src && size > 0)
         set(device, src, 0, size);
@@ -89,11 +102,13 @@ void HostImage::set(vk::Device const & device, void const * src, size_t offset, 
 //! @note       eTransferDst is automatically added to info.usage flags
 LocalImage::LocalImage(vk::Device const &         device,
                        vk::PhysicalDevice const & physicalDevice,
-                       vk::ImageCreateInfo        info)
+                       vk::ImageCreateInfo        info,
+                       vk::ImageAspectFlags       aspect /*= vk::ImageAspectFlagBits::eColor*/)
     : Image(device,
             physicalDevice,
             info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            aspect)
 {
 }
 
@@ -110,11 +125,13 @@ LocalImage::LocalImage(vk::Device const &         device,
                        vk::Queue const &          queue,
                        vk::ImageCreateInfo        info,
                        void const *               src,
-                       size_t                     size)
+                       size_t                     size,
+                       vk::ImageAspectFlags       aspect /*= vk::ImageAspectFlagBits::eColor*/)
     : Image(device,
             physicalDevice,
             info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            aspect)
 {
     set(device, physicalDevice, commandPool, queue, src, size);
 }
@@ -150,6 +167,10 @@ void LocalImage::set(vk::Device const &         device,
                      vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
+//! @param  device
+//! @param  commandPool
+//! @param  queue
+//! @param  buffer
 void LocalImage::copy(vk::Device const &      device,
                       vk::CommandPool const & commandPool,
                       vk::Queue const &       queue,
@@ -169,32 +190,49 @@ void LocalImage::copy(vk::Device const &      device,
                        });
 }
 
+//! @param  device
+//! @param  commandPool
+//! @param  queue
+//! @param  oldLayout
+//! @param  newLayout
 void LocalImage::transitionLayout(vk::Device const &      device,
                                   vk::CommandPool const & commandPool,
                                   vk::Queue const &       queue,
                                   vk::ImageLayout         oldLayout,
                                   vk::ImageLayout         newLayout)
 {
-    vk::PipelineStageFlags srcStage;
-    vk::PipelineStageFlags dstStage;
     vk::AccessFlags        srcAccessMask;
     vk::AccessFlags        dstAccessMask;
+    vk::PipelineStageFlags srcStage;
+    vk::PipelineStageFlags dstStage;
+    vk::ImageAspectFlags   aspectMask;
 
     if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
     {
         srcAccessMask = vk::AccessFlags();
         dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-
-        srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
-        dstStage = vk::PipelineStageFlagBits::eTransfer;
+        srcStage      = vk::PipelineStageFlagBits::eTopOfPipe;
+        dstStage      = vk::PipelineStageFlagBits::eTransfer;
+        aspectMask    = vk::ImageAspectFlagBits::eColor;
     }
     else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
     {
         srcAccessMask = vk::AccessFlagBits::eTransferWrite;
         dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        srcStage      = vk::PipelineStageFlagBits::eTransfer;
+        dstStage      = vk::PipelineStageFlagBits::eFragmentShader;
+        aspectMask    = vk::ImageAspectFlagBits::eColor;
+    }
+    else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
+    {
+        srcAccessMask = vk::AccessFlags();
+        dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
-        srcStage = vk::PipelineStageFlagBits::eTransfer;
-        dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+        srcStage   = vk::PipelineStageFlagBits::eTopOfPipe;
+        dstStage   = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        aspectMask = vk::ImageAspectFlagBits::eDepth;
+        if (info_.format == vk::Format::eD32SfloatS8Uint || info_.format == vk::Format::eD24UnormS8Uint)
+            aspectMask |= vk::ImageAspectFlagBits::eStencil;
     }
     else
     {
@@ -208,7 +246,7 @@ void LocalImage::transitionLayout(vk::Device const &      device,
                                    VK_QUEUE_FAMILY_IGNORED,
                                    VK_QUEUE_FAMILY_IGNORED,
                                    image_.get(),
-                                   vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+                                   vk::ImageSubresourceRange(aspectMask, 0, 1, 0, 1));
 
     executeOnceSynched(device,
                        commandPool,
@@ -216,5 +254,24 @@ void LocalImage::transitionLayout(vk::Device const &      device,
                        [srcStage, dstStage, &barrier] (vk::CommandBuffer commands) {
                            commands.pipelineBarrier(srcStage, dstStage, {}, nullptr, nullptr, barrier);
                        });
+}
+
+//! @param  device
+//! @param  physicalDevice
+//! @param  commandPool
+//! @param  queue
+//! @param  info
+DepthImage::DepthImage(vk::Device const &         device,
+                       vk::PhysicalDevice const & physicalDevice,
+                       vk::CommandPool const &    commandPool,
+                       vk::Queue const &          queue,
+                       vk::ImageCreateInfo        info)
+    : LocalImage(device, physicalDevice, info, vk::ImageAspectFlagBits::eDepth)
+{
+    transitionLayout(device,
+                     commandPool,
+                     queue,
+                     vk::ImageLayout::eUndefined,
+                     vk::ImageLayout::eDepthStencilAttachmentOptimal);
 }
 } // namespace Vkx
