@@ -8,6 +8,7 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vulkan/vulkan.hpp>
@@ -45,7 +46,7 @@ std::vector<char const *> const DEVICE_EXTENSIONS =
 // This is the vertex format.
 struct Vertex
 {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
@@ -75,7 +76,7 @@ vk::VertexInputBindingDescription Vertex::bindingDescription_ =
 std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions_ =
 {
     {
-        { 0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos) },
+        { 0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos) },
         { 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) },
         { 2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord) }
     }
@@ -84,15 +85,21 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::attributeDescriptions
 // This is the vertex data that is loaded into the vertex buffer. It must match the attribute descriptions.
 static Vertex const vertices[] =
 {
-    {{ -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-    {{  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-    {{  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-    {{ -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
+    {{ -0.5f, -0.5f,  0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    {{  0.5f, -0.5f,  0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    {{  0.5f,  0.5f,  0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    {{ -0.5f,  0.5f,  0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+
+    {{ -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    {{  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    {{  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    {{ -0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
 };
 
 const uint16_t indices[] =
 {
-    0, 1, 2, 2, 3, 0
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
 };
 
 class HelloTriangleApplication
@@ -185,8 +192,9 @@ private:
         createRenderPass();
         createDescriptorSetLayout();
         createGraphicsPipeline();
-        createFramebuffers();
         createCommandPools();
+        createDepthResources();
+        createFramebuffers();
         createTextureImage();
         createTextureSampler();
         createVertexBuffer();
@@ -503,14 +511,27 @@ private:
                                                   vk::AttachmentStoreOp::eDontCare,
                                                   vk::ImageLayout::eUndefined,
                                                   vk::ImageLayout::ePresentSrcKHR);
-
         vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
-        vk::SubpassDescription  subpass({},
-                                        vk::PipelineBindPoint::eGraphics,
-                                        0,
-                                        nullptr,
-                                        1,
-                                        &colorAttachmentRef);
+
+        vk::AttachmentDescription depthAttachment({},
+                                                  findDepthFormat(),
+                                                  vk::SampleCountFlagBits::e1,
+                                                  vk::AttachmentLoadOp::eClear,
+                                                  vk::AttachmentStoreOp::eDontCare,
+                                                  vk::AttachmentLoadOp::eDontCare,
+                                                  vk::AttachmentStoreOp::eDontCare,
+                                                  vk::ImageLayout::eUndefined,
+                                                  vk::ImageLayout::eDepthStencilAttachmentOptimal);
+        vk::AttachmentReference depthAttachmentRef(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+        vk::SubpassDescription subpass({},
+                                       vk::PipelineBindPoint::eGraphics,
+                                       0,
+                                       nullptr,
+                                       1,
+                                       &colorAttachmentRef,
+                                       nullptr,
+                                       &depthAttachmentRef);
 
         vk::SubpassDependency dependency(VK_SUBPASS_EXTERNAL,
                                          0,
@@ -519,10 +540,11 @@ private:
                                          vk::AccessFlags(),
                                          vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
 
+        std::array<vk::AttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
         renderPass_ = device_->createRenderPassUnique(
             vk::RenderPassCreateInfo({},
-                                     1,
-                                     &colorAttachment,
+                                     (uint32_t)attachments.size(),
+                                     attachments.data(),
                                      1,
                                      &subpass,
                                      1,
@@ -581,6 +603,12 @@ private:
 
         pipelineLayout_ = device_->createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo({}, 1, &descriptorSetLayout_.get()));
 
+        vk::PipelineDepthStencilStateCreateInfo depthStencil({},
+                                                             VK_TRUE,
+                                                             VK_TRUE,
+                                                             vk::CompareOp::eLess,
+                                                             VK_FALSE,
+                                                             VK_FALSE);
         graphicsPipeline_ = device_->createGraphicsPipelineUnique(
             vk::PipelineCache(),
             vk::GraphicsPipelineCreateInfo({},
@@ -592,7 +620,7 @@ private:
                                            &viewportState,
                                            &rasterizer,
                                            &multisampling,
-                                           nullptr,
+                                           &depthStencil,
                                            &colorBlending,
                                            nullptr,
                                            *pipelineLayout_,
@@ -605,12 +633,13 @@ private:
         swapChainFramebuffers_.reserve(swapChainImageViews_.size());
         for (auto const & view : swapChainImageViews_)
         {
+            std::array<vk::ImageView, 2> attachments = { view.get(), depthImage_.view() };
             swapChainFramebuffers_.push_back(
                 device_->createFramebufferUnique(
                     vk::FramebufferCreateInfo({},
                                               *renderPass_,
-                                              1,
-                                              &view.get(),
+                                              (uint32_t)attachments.size(),
+                                              attachments.data(),
                                               swapChainExtent_.width,
                                               swapChainExtent_.height,
                                               1)));
@@ -623,6 +652,46 @@ private:
         transientCommandPool_ = device_->createCommandPoolUnique(
             vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eTransient,
                                       graphicsFamily_));
+    }
+
+    void createDepthResources()
+    {
+        vk::Format format = findDepthFormat();
+        depthImage_ = Vkx::DepthImage(device_.get(),
+                                      physicalDevice_,
+                                      transientCommandPool_.get(),
+                                      graphicsQueue_,
+                                      vk::ImageCreateInfo({},
+                                                          vk::ImageType::e2D,
+                                                          format,
+                                                          { swapChainExtent_.width, swapChainExtent_.height, 1 },
+                                                          1,
+                                                          1,
+                                                          vk::SampleCountFlagBits::e1,
+                                                          vk::ImageTiling::eOptimal,
+                                                          vk::ImageUsageFlagBits::eDepthStencilAttachment));
+    }
+
+    vk::Format findSupportedFormat(std::vector<vk::Format> const & candidates,
+                                   vk::ImageTiling                 tiling,
+                                   vk::FormatFeatureFlags          features)
+    {
+        for (auto format : candidates)
+        {
+            vk::FormatProperties props = physicalDevice_.getFormatProperties(format);
+            if (tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features)
+                return format;
+            else if (tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features)
+                return format;
+        }
+        throw std::runtime_error("findSupportedFormat: failed to find supported format");
+    }
+
+    vk::Format findDepthFormat()
+    {
+        return findSupportedFormat({ vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
+                                   vk::ImageTiling::eOptimal,
+                                   vk::FormatFeatureFlagBits::eDepthStencilAttachment);
     }
 
     void createTextureImage()
@@ -649,13 +718,6 @@ private:
                                         pixels,
                                         imageSize);
         stbi_image_free(pixels);
-        textureImageView_ = device_->createImageViewUnique(
-            vk::ImageViewCreateInfo({},
-                                    textureImage_,
-                                    vk::ImageViewType::e2D,
-                                    textureImage_.info().format,
-                                    vk::ComponentMapping(),
-                                    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)));
     }
 
     void createTextureSampler()
@@ -732,7 +794,7 @@ private:
         {
             vk::DescriptorBufferInfo uboInfo(uniformBuffers_[i], 0, sizeof(UniformBufferObject));
             vk::DescriptorImageInfo  imageInfo(textureSampler_.get(),
-                                               textureImageView_.get(),
+                                               textureImage_.view(),
                                                vk::ImageLayout::eShaderReadOnlyOptimal);
             vk::WriteDescriptorSet writeDescriptorSets[] =
             {
@@ -759,10 +821,13 @@ private:
 
     void createCommandBuffers()
     {
-        vk::ClearValue clearColor(std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f });
         vk::Buffer     vertexBuffers[] = { vertexBuffer_ };
         vk::DeviceSize offsets[]       = { 0 };
-
+        std::array<vk::ClearValue, 2> clearValues =
+        {
+            std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f },
+            vk::ClearDepthStencilValue(1.0f, 0)
+        };
         commandBuffers_ = device_->allocateCommandBuffersUnique(
             vk::CommandBufferAllocateInfo(*commandPool_,
                                           vk::CommandBufferLevel::ePrimary,
@@ -776,15 +841,15 @@ private:
                 vk::RenderPassBeginInfo(*renderPass_,
                                         *swapChainFramebuffers_[i],
                                         {{ 0, 0 }, swapChainExtent_ },
-                                        1,
-                                        &clearColor),
+                                        (uint32_t)clearValues.size(),
+                                        clearValues.data()),
                 vk::SubpassContents::eInline);
             buffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline_);
             buffer->bindVertexBuffers(0, 1, vertexBuffers, offsets);
             buffer->bindIndexBuffer(indexBuffer_, 0, vk::IndexType::eUint16);
             buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                        pipelineLayout_.get(), 0, 1, &descriptorSets_[i], 0, nullptr);
-            buffer->drawIndexed(6, 1, 0, 0, 0);
+            buffer->drawIndexed(sizeof(indices) / sizeof(*indices), 1, 0, 0, 0);
             buffer->endRenderPass();
             buffer->end();
             ++i;
@@ -909,6 +974,7 @@ private:
         createSwapChain();
         createRenderPass();
         createGraphicsPipeline();
+        createDepthResources();
         createFramebuffers();
         createCommandBuffers();
     }
@@ -936,8 +1002,8 @@ private:
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
     vk::UniqueCommandPool transientCommandPool_;
+    Vkx::DepthImage depthImage_;
     Vkx::LocalImage textureImage_;
-    vk::UniqueImageView textureImageView_;
     vk::UniqueSampler textureSampler_;
     Vkx::LocalBuffer vertexBuffer_;
     Vkx::LocalBuffer indexBuffer_;
