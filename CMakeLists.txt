@@ -8,6 +8,7 @@ find_package(Vulkan)
 
 set(VKTUTORIAL_SOURCES
     stb_image.h
+    tiny_obj_loader.h
     vktutorial.cpp
 )
 source_group(Sources FILES ${VKTUTORIAL_SOURCES})
@@ -73,6 +74,13 @@ add_custom_command(TARGET vktutorial POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/textures"
         "${PROJECT_BINARY_DIR}/textures"
+        )
+
+add_custom_command(TARGET vktutorial POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/models/"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/models"
+        "${PROJECT_BINARY_DIR}/models"
         )
 
 add_subdirectory(Glfwx)
