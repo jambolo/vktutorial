@@ -45,6 +45,9 @@ public:
     //! Returns the creation info.
     vk::ImageCreateInfo info() const { return info_; }
 
+    //! Returns the maximum number of mip levels needed for the given with and height.
+    static uint32_t computeMaxMipLevels(uint32_t width, uint32_t height);
+
 protected:
     vk::ImageCreateInfo info_;          //!< Info about the image
     vk::UniqueDeviceMemory allocation_; //!< The image data
@@ -112,6 +115,11 @@ public:
                           vk::Queue const &       queue,
                           vk::ImageLayout         oldLayout,
                           vk::ImageLayout         newLayout);
+
+    void generateMipmaps(vk::Device const &         device,
+        vk::PhysicalDevice const & physicalDevice,
+        vk::CommandPool const & commandPool,
+                         vk::Queue const & queue);
 };
 
 //! A LocalImage for use as a depth buffer (vk::ImageAspect::eDEPTH).
