@@ -67,7 +67,7 @@ struct Vertex
         );
     }
 
-    bool operator==(Vertex const & rhs) const
+    bool operator ==(Vertex const & rhs) const
     {
         return pos == rhs.pos && color == rhs.color && texCoord == rhs.texCoord;
     }
@@ -77,10 +77,11 @@ private:
     static std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions_;
 };
 
-namespace std {
-template<> struct hash<Vertex>
+namespace std
 {
-    size_t operator()(Vertex const & vertex) const
+template <> struct hash<Vertex>
+{
+    size_t operator ()(Vertex const & vertex) const
     {
         size_t h = 0;
         glm::detail::hash_combine(h, hash<glm::vec3>()(vertex.pos));
@@ -127,9 +128,9 @@ const uint16_t indices[] =
     0, 1, 2, 2, 3, 0,
     4, 5, 6, 6, 7, 4
 };
-#endif
+#endif // if 0
 
-char constexpr MODEL_PATH[] = "models/chalet.obj";
+char constexpr MODEL_PATH[]   = "models/chalet.obj";
 char constexpr TEXTURE_PATH[] = "textures/chalet.jpg";
 
 class HelloTriangleApplication
@@ -223,6 +224,7 @@ private:
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createCommandPools();
+        createColorResources();
         createDepthResources();
         createFramebuffers();
         createTextureImage();
@@ -282,11 +284,10 @@ private:
     {
         // Find a physical device that has the appropriate functionality for what we need.
         physicalDevice_ = firstSuitablePhysicalDevice();
-
+        vk::PhysicalDeviceProperties properties = physicalDevice_.getProperties();
+        msaaSamples_ = getMaxMsaa(properties);
 #if 0
         {
-            vk::PhysicalDeviceProperties properties = physicalDevice_.getProperties();
-
             std::cerr << "Physical Device chosen: " << properties.deviceName
                       << ", version: " << properties.driverVersion
                       << std::endl;
@@ -359,6 +360,22 @@ private:
             };
     }
 
+    vk::SampleCountFlagBits getMaxMsaa(vk::PhysicalDeviceProperties const & properties)
+    {
+        unsigned counts = std::min((unsigned)properties.limits.framebufferColorSampleCounts,
+                                   (unsigned)properties.limits.framebufferDepthSampleCounts);
+        if (counts == 0)
+            return vk::SampleCountFlagBits::e1;
+
+        int best = -1;
+        while (counts > 0)
+        {
+            ++best;
+            counts >>= 1;
+        }
+
+        return vk::SampleCountFlagBits(1 << best);
+    }
     void createLogicalDevice()
     {
         findQueueFamilies(physicalDevice_, graphicsFamily_, presentFamily_);
@@ -535,18 +552,18 @@ private:
     {
         vk::AttachmentDescription colorAttachment({},
                                                   swapChainImageFormat_,
-                                                  vk::SampleCountFlagBits::e1,
+                                                  msaaSamples_,
                                                   vk::AttachmentLoadOp::eClear,
                                                   vk::AttachmentStoreOp::eStore,
                                                   vk::AttachmentLoadOp::eDontCare,
                                                   vk::AttachmentStoreOp::eDontCare,
                                                   vk::ImageLayout::eUndefined,
-                                                  vk::ImageLayout::ePresentSrcKHR);
+                                                  vk::ImageLayout::eColorAttachmentOptimal);
         vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
 
         vk::AttachmentDescription depthAttachment({},
                                                   findDepthFormat(),
-                                                  vk::SampleCountFlagBits::e1,
+                                                  msaaSamples_,
                                                   vk::AttachmentLoadOp::eClear,
                                                   vk::AttachmentStoreOp::eDontCare,
                                                   vk::AttachmentLoadOp::eDontCare,
@@ -555,13 +572,24 @@ private:
                                                   vk::ImageLayout::eDepthStencilAttachmentOptimal);
         vk::AttachmentReference depthAttachmentRef(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
+        vk::AttachmentDescription resolveAttachment({},
+                                                    swapChainImageFormat_,
+                                                    vk::SampleCountFlagBits::e1,
+                                                    vk::AttachmentLoadOp::eDontCare,
+                                                    vk::AttachmentStoreOp::eStore,
+                                                    vk::AttachmentLoadOp::eDontCare,
+                                                    vk::AttachmentStoreOp::eDontCare,
+                                                    vk::ImageLayout::eUndefined,
+                                                    vk::ImageLayout::ePresentSrcKHR);
+        vk::AttachmentReference resolveAttachmentRef(2, vk::ImageLayout::eColorAttachmentOptimal);
+
         vk::SubpassDescription subpass({},
                                        vk::PipelineBindPoint::eGraphics,
                                        0,
                                        nullptr,
                                        1,
                                        &colorAttachmentRef,
-                                       nullptr,
+                                       &resolveAttachmentRef,
                                        &depthAttachmentRef);
 
         vk::SubpassDependency dependency(VK_SUBPASS_EXTERNAL,
@@ -571,7 +599,7 @@ private:
                                          vk::AccessFlags(),
                                          vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
 
-        std::array<vk::AttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+        std::array<vk::AttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, resolveAttachment };
         renderPass_ = device_->createRenderPassUnique(
             vk::RenderPassCreateInfo({},
                                      (uint32_t)attachments.size(),
@@ -623,7 +651,7 @@ private:
         rasterizer.setFrontFace(vk::FrontFace::eCounterClockwise);  // This is bullshit because of glm::lookAt
         rasterizer.setLineWidth(1.0);
 
-        vk::PipelineMultisampleStateCreateInfo multisampling;
+        vk::PipelineMultisampleStateCreateInfo multisampling({}, msaaSamples_);
 
         vk::PipelineColorBlendAttachmentState colorBlendAttachment;
         colorBlendAttachment.setColorWriteMask(Vkx::ColorComponentFlags::all);
@@ -664,7 +692,7 @@ private:
         swapChainFramebuffers_.reserve(swapChainImageViews_.size());
         for (auto const & view : swapChainImageViews_)
         {
-            std::array<vk::ImageView, 2> attachments = { view.get(), depthImage_.view() };
+            std::array<vk::ImageView, 3> attachments = { resolveImage_.view(), depthImage_.view(), view.get() };
             swapChainFramebuffers_.push_back(
                 device_->createFramebufferUnique(
                     vk::FramebufferCreateInfo({},
@@ -685,6 +713,24 @@ private:
                                       graphicsFamily_));
     }
 
+    void createColorResources()
+    {
+        resolveImage_ = Vkx::ResolveImage(device_.get(),
+                                          physicalDevice_,
+                                          transientCommandPool_.get(),
+                                          graphicsQueue_,
+                                          vk::ImageCreateInfo({},
+                                                              vk::ImageType::e2D,
+                                                              swapChainImageFormat_,
+                                                              { swapChainExtent_.width, swapChainExtent_.height, 1 },
+                                                              1,
+                                                              1,
+                                                              msaaSamples_,
+                                                              vk::ImageTiling::eOptimal,
+                                                              vk::ImageUsageFlagBits::eTransientAttachment |
+                                                              vk::ImageUsageFlagBits::eColorAttachment));
+    }
+
     void createDepthResources()
     {
         vk::Format format = findDepthFormat();
@@ -698,7 +744,7 @@ private:
                                                           { swapChainExtent_.width, swapChainExtent_.height, 1 },
                                                           1,
                                                           1,
-                                                          vk::SampleCountFlagBits::e1,
+                                                          msaaSamples_,
                                                           vk::ImageTiling::eOptimal,
                                                           vk::ImageUsageFlagBits::eDepthStencilAttachment));
     }
@@ -732,7 +778,7 @@ private:
         if (!pixels)
             throw std::runtime_error("createTextureImage: failed to load texture image!");
         VkDeviceSize imageSize = width * height * 4;
-        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+        uint32_t     mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
         textureImage_ = Vkx::LocalImage(device_.get(),
                                         physicalDevice_,
                                         transientCommandPool_.get(),
@@ -745,7 +791,9 @@ private:
                                                             1,
                                                             vk::SampleCountFlagBits::e1,
                                                             vk::ImageTiling::eOptimal,
-                                            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled),
+                                                            vk::ImageUsageFlagBits::eTransferSrc |
+                                                            vk::ImageUsageFlagBits::eTransferDst |
+                                                            vk::ImageUsageFlagBits::eSampled),
                                         pixels,
                                         imageSize);
         stbi_image_free(pixels);
@@ -775,14 +823,12 @@ private:
     void loadModel()
     {
         tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::shape_t>    shapes;
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
 
         if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH))
-        {
             throw std::runtime_error(warn + err);
-        }
 
         std::unordered_map<Vertex, uint32_t> uniqueVertices;
         for (auto const & shape : shapes)
@@ -828,7 +874,7 @@ private:
                                          physicalDevice_,
                                          transientCommandPool_.get(),
                                          graphicsQueue_,
-                                         vertices_.size()*sizeof(vertices_[0]),
+                                         vertices_.size() * sizeof(vertices_[0]),
                                          vk::BufferUsageFlagBits::eVertexBuffer,
                                          vertices_.data());
     }
@@ -1013,7 +1059,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo;
-        ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::pi<float>()/8.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::pi<float>() / 8.0f, glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view       = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.projection = glm::perspective(glm::quarter_pi<float>(),
                                           swapChainExtent_.width / (float)swapChainExtent_.height,
@@ -1055,6 +1101,7 @@ private:
         createSwapChain();
         createRenderPass();
         createGraphicsPipeline();
+        createColorResources();
         createDepthResources();
         createFramebuffers();
         createCommandBuffers();
@@ -1066,6 +1113,7 @@ private:
     vk::UniqueHandle<vk::DebugUtilsMessengerEXT, vk::DispatchLoaderDynamic> messenger_;
     uint32_t graphicsFamily_;
     uint32_t presentFamily_;
+    vk::SampleCountFlagBits msaaSamples_ = vk::SampleCountFlagBits::e1;
     vk::PhysicalDevice physicalDevice_;
     vk::UniqueDevice device_;
     vk::Queue graphicsQueue_;
@@ -1083,6 +1131,7 @@ private:
     std::vector<vk::UniqueFramebuffer> swapChainFramebuffers_;
     vk::UniqueCommandPool commandPool_;
     vk::UniqueCommandPool transientCommandPool_;
+    Vkx::ResolveImage resolveImage_;
     Vkx::DepthImage depthImage_;
     Vkx::LocalImage textureImage_;
     vk::UniqueSampler textureSampler_;
