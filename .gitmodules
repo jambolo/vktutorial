@@ -1,3 +1,6 @@
 [submodule "Glfwx"]
 	path = Glfwx
 	url = https://github.com/jambolo/Glfwx.git
+[submodule "Vkx"]
+	path = Vkx
+	url = https://github.com/jambolo/Vkx.git
