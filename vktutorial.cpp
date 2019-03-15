@@ -82,13 +82,11 @@ template<> struct hash<Vertex>
 {
     size_t operator()(Vertex const & vertex) const
     {
-        std::string hashes;
-        size_t h;
-        hashes.reserve(3 * sizeof(size_t));
-        h = hash<glm::vec3>()(vertex.pos); hashes.append((char const *)&h, sizeof(h));
-        h = hash<glm::vec3>()(vertex.color); hashes.append((char const *)&h, sizeof(h));
-        h = hash<glm::vec2>()(vertex.texCoord); hashes.append((char const *)&h, sizeof(h));
-        return hash<string>()(hashes);
+        size_t h = 0;
+        glm::detail::hash_combine(h, hash<glm::vec3>()(vertex.pos));
+        glm::detail::hash_combine(h, hash<glm::vec3>()(vertex.color));
+        glm::detail::hash_combine(h, hash<glm::vec2>()(vertex.texCoord));
+        return h;
     }
 };
 }
@@ -150,8 +148,8 @@ public:
 
 private:
 
-    static int constexpr WIDTH  = 800;
-    static int constexpr HEIGHT = 600;
+    static int constexpr WIDTH  = 1920;
+    static int constexpr HEIGHT = 1440;
     static int constexpr MAX_FRAMES_IN_FLIGHT = 2;
 
     struct SwapChainSupportInfo
@@ -729,12 +727,12 @@ private:
 
     void createTextureImage()
     {
-        int       texWidth, texHeight, texChannels;
-        stbi_uc * pixels = stbi_load(TEXTURE_PATH, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        int       width, height, channels;
+        stbi_uc * pixels = stbi_load(TEXTURE_PATH, &width, &height, &channels, STBI_rgb_alpha);
         if (!pixels)
             throw std::runtime_error("createTextureImage: failed to load texture image!");
-        VkDeviceSize imageSize = texWidth * texHeight * 4;
-
+        VkDeviceSize imageSize = width * height * 4;
+        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
         textureImage_ = Vkx::LocalImage(device_.get(),
                                         physicalDevice_,
                                         transientCommandPool_.get(),
@@ -742,12 +740,12 @@ private:
                                         vk::ImageCreateInfo({},
                                                             vk::ImageType::e2D,
                                                             vk::Format::eR8G8B8A8Unorm,
-                                                            { (uint32_t)texWidth, (uint32_t)texHeight, 1 },
-                                                            1,
+                                                            { (uint32_t)width, (uint32_t)height, 1 },
+                                                            mipLevels,
                                                             1,
                                                             vk::SampleCountFlagBits::e1,
                                                             vk::ImageTiling::eOptimal,
-                                                            vk::ImageUsageFlagBits::eSampled),
+                                            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled),
                                         pixels,
                                         imageSize);
         stbi_image_free(pixels);
@@ -769,7 +767,7 @@ private:
                                   VK_FALSE,
                                   vk::CompareOp::eAlways,
                                   0.0f,
-                                  0.0f,
+                                  (float)textureImage_.info().mipLevels,
                                   vk::BorderColor::eIntOpaqueBlack,
                                   VK_FALSE));
     }
@@ -1015,7 +1013,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo;
-        ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::quarter_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::pi<float>()/8.0f, glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view       = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.projection = glm::perspective(glm::quarter_pi<float>(),
                                           swapChainExtent_.width / (float)swapChainExtent_.height,
