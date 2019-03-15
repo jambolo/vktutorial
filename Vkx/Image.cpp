@@ -52,11 +52,11 @@ Image::Image(Image && src)
     view_       = std::move(src.view_);
 }
 
-//! This function returns the number of mip levels needed to reach a 1x1 texture, assuming that the values are integers and the 
+//! This function returns the number of mip levels needed to reach a 1x1 texture, assuming that the values are integers and the
 //! length of a side is computed as: Length<sub>i</sub> = Length<sub>i-1</sub> > 1 ? Length<sub>i-1</sub> / 2 : 1
 //!
-//! @param 	width       Width of the image
-//! @param 	height      Height of the image
+//! @param  width       Width of the image
+//! @param  height      Height of the image
 //!
 //! @return number of levels
 uint32_t Image::computeMaxMipLevels(uint32_t width, uint32_t height)
@@ -112,17 +112,11 @@ void HostImage::set(vk::Device const & device, void const * src, size_t offset, 
 //! @param  device
 //! @param  physicalDevice
 //! @param  info
-//!
-//! @note       eTransferDst is automatically added to info.usage flags
 LocalImage::LocalImage(vk::Device const &         device,
                        vk::PhysicalDevice const & physicalDevice,
                        vk::ImageCreateInfo        info,
                        vk::ImageAspectFlags       aspect /*= vk::ImageAspectFlagBits::eColor*/)
-    : Image(device,
-            physicalDevice,
-            info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            aspect)
+    : Image(device, physicalDevice, info, vk::MemoryPropertyFlagBits::eDeviceLocal, aspect)
 {
 }
 
@@ -141,11 +135,7 @@ LocalImage::LocalImage(vk::Device const &         device,
                        void const *               src,
                        size_t                     size,
                        vk::ImageAspectFlags       aspect /*= vk::ImageAspectFlagBits::eColor*/)
-    : Image(device,
-            physicalDevice,
-            info.setUsage(info.usage | vk::ImageUsageFlagBits::eTransferDst),
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            aspect)
+    : Image(device, physicalDevice, info, vk::MemoryPropertyFlagBits::eDeviceLocal, aspect)
 {
     set(device, physicalDevice, commandPool, queue, src, size);
 }
@@ -253,12 +243,19 @@ void LocalImage::transitionLayout(vk::Device const &      device,
     {
         srcAccessMask = vk::AccessFlags();
         dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-        srcStage   = vk::PipelineStageFlagBits::eTopOfPipe;
-        dstStage   = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-        aspectMask = vk::ImageAspectFlagBits::eDepth;
+        srcStage      = vk::PipelineStageFlagBits::eTopOfPipe;
+        dstStage      = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        aspectMask    = vk::ImageAspectFlagBits::eDepth;
         if (info_.format == vk::Format::eD32SfloatS8Uint || info_.format == vk::Format::eD24UnormS8Uint)
             aspectMask |= vk::ImageAspectFlagBits::eStencil;
+    }
+    else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eColorAttachmentOptimal)
+    {
+        srcAccessMask = vk::AccessFlags();
+        dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+        srcStage      = vk::PipelineStageFlagBits::eTopOfPipe;
+        dstStage      = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        aspectMask    = vk::ImageAspectFlagBits::eColor;
     }
     else
     {
@@ -282,23 +279,21 @@ void LocalImage::transitionLayout(vk::Device const &      device,
                        });
 }
 
-//! @param 	vk::Device const & device
-//! @param 	vk::PhysicalDevice const & physicalDevice
-//! @param 	vk::CommandPool const & commandPool
-//! @param 	vk::Queue const & queue
+//! @param  vk::Device const & device
+//! @param  vk::PhysicalDevice const & physicalDevice
+//! @param  vk::CommandPool const & commandPool
+//! @param  vk::Queue const & queue
 //!
 //! @return void
-void LocalImage::generateMipmaps(vk::Device const &      device,
-    vk::PhysicalDevice const & physicalDevice,
-    vk::CommandPool const & commandPool,
-                                 vk::Queue const &       queue)
+void LocalImage::generateMipmaps(vk::Device const &         device,
+                                 vk::PhysicalDevice const & physicalDevice,
+                                 vk::CommandPool const &    commandPool,
+                                 vk::Queue const &          queue)
 {
     // Check if image format supports blitting with linear filtering
     vk::FormatProperties formatProperties = physicalDevice.getFormatProperties(info_.format);
     if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear))
-    {
         throw std::runtime_error("texture image format does not support linear blitting!");
-    }
     executeOnceSynched(device,
                        commandPool,
                        queue,
@@ -350,18 +345,6 @@ void LocalImage::generateMipmaps(vk::Device const &      device,
                                                       vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i, 0, 1),
                                                       {{{ 0, 0, 0 }, { mipWidth, mipHeight, 1 } } }),
                                                   vk::Filter::eLinear);
-
-//                                // Transition the previous mip level to shader read-only now that we are done with it
-//                                barrier.setOldLayout(vk::ImageLayout::eTransferSrcOptimal);
-//                                barrier.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-//                                barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferRead);
-//                                barrier.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-//                                commands.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-//                                                         vk::PipelineStageFlagBits::eFragmentShader,
-//                                                         {},
-//                                                         nullptr,
-//                                                         nullptr,
-//                                                         barrier);
                            }
 
                            // Transition the final mip level to transfer src so that all levels can be transitioned to shader
@@ -371,13 +354,12 @@ void LocalImage::generateMipmaps(vk::Device const &      device,
                            barrier.setNewLayout(vk::ImageLayout::eTransferSrcOptimal);
                            barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite);
                            barrier.setDstAccessMask(vk::AccessFlagBits::eTransferRead);
-
                            commands.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eTransfer,
-                               {},
-                               nullptr,
-                               nullptr,
-                               barrier);
+                                                    vk::PipelineStageFlagBits::eTransfer,
+                                                    {},
+                                                    nullptr,
+                                                    nullptr,
+                                                    barrier);
 
                            // Transition all mip levels to shader read-only
                            barrier.subresourceRange.setBaseMipLevel(0);
@@ -387,12 +369,12 @@ void LocalImage::generateMipmaps(vk::Device const &      device,
                            barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferRead);
                            barrier.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
                            commands.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                               vk::PipelineStageFlagBits::eFragmentShader,
-                               {},
-                               nullptr,
-                               nullptr,
-                               barrier);
-    });
+                                                    vk::PipelineStageFlagBits::eFragmentShader,
+                                                    {},
+                                                    nullptr,
+                                                    nullptr,
+                                                    barrier);
+                       });
 }
 
 //! @param  device
@@ -412,5 +394,24 @@ DepthImage::DepthImage(vk::Device const &         device,
                      queue,
                      vk::ImageLayout::eUndefined,
                      vk::ImageLayout::eDepthStencilAttachmentOptimal);
+}
+
+//! @param  device
+//! @param  physicalDevice
+//! @param  commandPool
+//! @param  queue
+//! @param  info
+ResolveImage::ResolveImage(vk::Device const &         device,
+                           vk::PhysicalDevice const & physicalDevice,
+                           vk::CommandPool const &    commandPool,
+                           vk::Queue const &          queue,
+                           vk::ImageCreateInfo        info)
+    : LocalImage(device, physicalDevice, info)
+{
+    transitionLayout(device,
+                     commandPool,
+                     queue,
+                     vk::ImageLayout::eUndefined,
+                     vk::ImageLayout::eColorAttachmentOptimal);
 }
 } // namespace Vkx

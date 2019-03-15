@@ -117,9 +117,9 @@ public:
                           vk::ImageLayout         newLayout);
 
     void generateMipmaps(vk::Device const &         device,
-        vk::PhysicalDevice const & physicalDevice,
-        vk::CommandPool const & commandPool,
-                         vk::Queue const & queue);
+                         vk::PhysicalDevice const & physicalDevice,
+                         vk::CommandPool const &    commandPool,
+                         vk::Queue const &          queue);
 };
 
 //! A LocalImage for use as a depth buffer (vk::ImageAspect::eDEPTH).
@@ -135,6 +135,21 @@ public:
                vk::CommandPool const &    commandPool,
                vk::Queue const &          queue,
                vk::ImageCreateInfo        info);
+};
+
+//! A LocalImage for use as a MSAA buffer (vk::ImageLayout::eColorAttachmentOptimal).
+class ResolveImage : public LocalImage
+{
+public:
+    //! Constructor.
+    ResolveImage() = default;
+
+    //! Constructor.
+    ResolveImage(vk::Device const &         device,
+                 vk::PhysicalDevice const & physicalDevice,
+                 vk::CommandPool const &    commandPool,
+                 vk::Queue const &          queue,
+                 vk::ImageCreateInfo        info);
 };
 }
 
