@@ -206,7 +206,7 @@ private:
         }
 
         // Create a Vulkan instance
-        instance_ = vk::createInstanceUnique(createInfo);
+        instance_ = std::make_shared<Vkx::Instance>(createInfo);
 
         // Some objects, e.g. the validation layer, are not linked to the static loader and must be loaded by a dynamic loader.
         dynamicLoader_.init(*instance_);
@@ -283,8 +283,19 @@ private:
     void choosePhysicalDevice()
     {
         // Find a physical device that has the appropriate functionality for what we need.
-        physicalDevice_ = firstSuitablePhysicalDevice();
-        vk::PhysicalDeviceProperties properties = physicalDevice_.getProperties();
+        physicalDevice_ =
+            std::make_shared<Vkx::PhysicalDevice>(instance_, [this] (std::vector<vk::PhysicalDevice> const & physicalDevices) {
+                                                      // Basically, we just pick the first one that is suitable.
+                                                      for (auto const & device : physicalDevices)
+                                                      {
+                                                          if (isSuitable(device))
+                                                              return device;
+                                                      }
+
+                                                      throw std::runtime_error(
+                                                          "choosePhysicalDevice: failed to find a suitable GPU!");
+                                                  });
+        vk::PhysicalDeviceProperties properties = physicalDevice_->getProperties();
         msaaSamples_ = getMaxMsaa(properties);
 #if 0
         {
@@ -315,19 +326,6 @@ private:
             }
         }
 #endif  // if 0
-    }
-
-    vk::PhysicalDevice firstSuitablePhysicalDevice()
-    {
-        // Basically, we just enumerate the physical devices and pick the first one that is suitable.
-        std::vector<vk::PhysicalDevice> physicalDevices = instance_->enumeratePhysicalDevices();
-        for (auto const & device : physicalDevices)
-        {
-            if (isSuitable(device))
-                return device;
-        }
-
-        throw std::runtime_error("failed to find a suitable GPU!");
     }
 
     bool isSuitable(vk::PhysicalDevice const & device)
@@ -378,7 +376,7 @@ private:
     }
     void createLogicalDevice()
     {
-        findQueueFamilies(physicalDevice_, graphicsFamily_, presentFamily_);
+        findQueueFamilies(*physicalDevice_, graphicsFamily_, presentFamily_);
 
         float priority = 1.0f;
         std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
@@ -403,7 +401,7 @@ private:
             createInfo.setEnabledLayerCount(static_cast<uint32_t>(VALIDATION_LAYERS.size()));
         }
 
-        device_        = physicalDevice_.createDeviceUnique(createInfo);
+        device_        = std::make_shared<Vkx::Device>(physicalDevice_, createInfo);
         graphicsQueue_ = device_->getQueue(graphicsFamily_, 0);
         presentQueue_  = device_->getQueue(presentFamily_, 0);
     }
@@ -440,7 +438,7 @@ private:
 
     void createSwapChain()
     {
-        SwapChainSupportInfo swapChainSupport = querySwapChainSupport(physicalDevice_);
+        SwapChainSupportInfo swapChainSupport = querySwapChainSupport(*physicalDevice_);
 
         vk::SurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
         vk::PresentModeKHR   presentMode   = chooseSwapPresentMode(swapChainSupport.presentModes);
@@ -630,8 +628,8 @@ private:
 
     void createGraphicsPipeline()
     {
-        vk::UniqueShaderModule vertShaderModule(Vkx::loadShaderModule("shaders/shader.vert.spv", *device_), *device_);
-        vk::UniqueShaderModule fragShaderModule(Vkx::loadShaderModule("shaders/shader.frag.spv", *device_), *device_);
+        vk::UniqueShaderModule vertShaderModule(Vkx::loadShaderModule("shaders/shader.vert.spv", device_), *device_);
+        vk::UniqueShaderModule fragShaderModule(Vkx::loadShaderModule("shaders/shader.frag.spv", device_), *device_);
 
         vk::PipelineShaderStageCreateInfo shaderStages[] =
         {
@@ -715,8 +713,7 @@ private:
 
     void createColorResources()
     {
-        resolveImage_ = Vkx::ResolveImage(device_.get(),
-                                          physicalDevice_,
+        resolveImage_ = Vkx::ResolveImage(device_,
                                           transientCommandPool_.get(),
                                           graphicsQueue_,
                                           vk::ImageCreateInfo({},
@@ -734,8 +731,7 @@ private:
     void createDepthResources()
     {
         vk::Format format = findDepthFormat();
-        depthImage_ = Vkx::DepthImage(device_.get(),
-                                      physicalDevice_,
+        depthImage_ = Vkx::DepthImage(device_,
                                       transientCommandPool_.get(),
                                       graphicsQueue_,
                                       vk::ImageCreateInfo({},
@@ -755,7 +751,7 @@ private:
     {
         for (auto format : candidates)
         {
-            vk::FormatProperties props = physicalDevice_.getFormatProperties(format);
+            vk::FormatProperties props = physicalDevice_->getFormatProperties(format);
             if (tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features)
                 return format;
             else if (tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features)
@@ -779,8 +775,7 @@ private:
             throw std::runtime_error("createTextureImage: failed to load texture image!");
         VkDeviceSize imageSize = width * height * 4;
         uint32_t     mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-        textureImage_ = Vkx::LocalImage(device_.get(),
-                                        physicalDevice_,
+        textureImage_ = Vkx::LocalImage(device_,
                                         transientCommandPool_.get(),
                                         graphicsQueue_,
                                         vk::ImageCreateInfo({},
@@ -870,8 +865,7 @@ private:
 
     void createVertexBuffer()
     {
-        vertexBuffer_ = Vkx::LocalBuffer(device_.get(),
-                                         physicalDevice_,
+        vertexBuffer_ = Vkx::LocalBuffer(device_,
                                          transientCommandPool_.get(),
                                          graphicsQueue_,
                                          vertices_.size() * sizeof(vertices_[0]),
@@ -881,8 +875,7 @@ private:
 
     void createIndexBuffer()
     {
-        indexBuffer_ = Vkx::LocalBuffer(device_.get(),
-                                        physicalDevice_,
+        indexBuffer_ = Vkx::LocalBuffer(device_,
                                         transientCommandPool_.get(),
                                         graphicsQueue_,
                                         indices_.size() * sizeof(indices_[0]),
@@ -897,7 +890,7 @@ private:
 
         for (size_t i = 0; i < swapChainImages_.size(); ++i)
         {
-            uniformBuffers_.emplace_back(device_.get(), physicalDevice_, size, vk::BufferUsageFlagBits::eUniformBuffer);
+            uniformBuffers_.emplace_back(device_, size, vk::BufferUsageFlagBits::eUniformBuffer);
         }
     }
 
@@ -1070,7 +1063,7 @@ private:
         // this, then the image will be rendered upside down."
         ubo.projection[1][1] *= -1;   // This has got to go
 
-        uniformBuffers_[index].set(device_.get(), 0, &ubo, sizeof(ubo));
+        uniformBuffers_[index].set(0, &ubo, sizeof(ubo));
     }
 
     void resetSwapChain()
@@ -1108,14 +1101,14 @@ private:
     }
 
     std::unique_ptr<Glfwx::Window> window_ = nullptr;
-    vk::UniqueInstance instance_;
+    std::shared_ptr<Vkx::Instance> instance_;
     vk::DispatchLoaderDynamic dynamicLoader_;
     vk::UniqueHandle<vk::DebugUtilsMessengerEXT, vk::DispatchLoaderDynamic> messenger_;
     uint32_t graphicsFamily_;
     uint32_t presentFamily_;
     vk::SampleCountFlagBits msaaSamples_ = vk::SampleCountFlagBits::e1;
-    vk::PhysicalDevice physicalDevice_;
-    vk::UniqueDevice device_;
+    std::shared_ptr<Vkx::PhysicalDevice> physicalDevice_;
+    std::shared_ptr<Vkx::Device> device_;
     vk::Queue graphicsQueue_;
     vk::Queue presentQueue_;
     vk::UniqueSurfaceKHR surface_;
