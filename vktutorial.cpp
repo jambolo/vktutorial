@@ -209,7 +209,7 @@ private:
         instance_ = std::make_shared<Vkx::Instance>(createInfo);
 
         // Some objects, e.g. the validation layer, are not linked to the static loader and must be loaded by a dynamic loader.
-        dynamicLoader_.init(*instance_);
+        dynamicLoader_.init(*instance_, vkGetInstanceProcAddr);
 
         // Set up validation callbacks
         setupDebugMessenger();
@@ -846,19 +846,19 @@ private:
 
                 vertex.color = { 1.0f, 1.0f, 1.0f };
 
-                uint32_t index;
+                uint32_t uniqueIndex;
                 if (uniqueVertices.count(vertex) == 0)
                 {
-                    index = (uint32_t)vertices_.size();
+                    uniqueIndex = (uint32_t)vertices_.size();
                     vertices_.push_back(vertex);
-                    uniqueVertices[vertex] = index;
+                    uniqueVertices[vertex] = uniqueIndex;
                 }
                 else
                 {
-                    index = uniqueVertices[vertex];
+                    uniqueIndex = uniqueVertices[vertex];
                 }
 
-                indices_.push_back(index);
+                indices_.push_back(uniqueIndex);
             }
         }
     }
@@ -945,7 +945,7 @@ private:
         vk::DeviceSize offsets[]       = { 0 };
         std::array<vk::ClearValue, 2> clearValues =
         {
-            std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f },
+            vk::ClearColorValue(std::array<float, 4> { 0.0f, 0.0f, 0.0f, 1.0f }),
             vk::ClearDepthStencilValue(1.0f, 0)
         };
         commandBuffers_ = device_->allocateCommandBuffersUnique(
