@@ -1,10 +1,10 @@
 #define GLFW_INCLUDE_VULKAN
-#include "Glfwx/Glfwx.h"
-#include "Vkx/Buffer.h"
-#include "Vkx/Image.h"
-#include "Vkx/Instance.h"
-#include "Vkx/SwapChain.h"
-#include "Vkx/Vkx.h"
+#include <Glfwx/Glfwx.h>
+#include <Vkx/Buffer.h>
+#include <Vkx/Image.h>
+#include <Vkx/Instance.h>
+#include <Vkx/SwapChain.h>
+#include <Vkx/Vkx.h>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
@@ -285,7 +285,8 @@ private:
     {
         // Find a physical device that has the appropriate functionality for what we need.
         physicalDevice_ =
-            std::make_shared<Vkx::PhysicalDevice>(instance_, [this] (std::vector<vk::PhysicalDevice> const & physicalDevices) {
+            std::make_shared<Vkx::PhysicalDevice>(instance_,
+                                                  [this] (std::vector<vk::PhysicalDevice> const & physicalDevices) {
                                                       // Basically, we just pick the first one that is suitable.
                                                       for (auto const & device : physicalDevices)
                                                       {
@@ -349,13 +350,13 @@ private:
         return extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
     }
 
-    SwapChainSupportInfo querySwapChainSupport(vk::PhysicalDevice const & device)
+    SwapChainSupportInfo querySwapChainSupport(vk::PhysicalDevice const & physicalDevice)
     {
         return
             {
-                device.getSurfaceCapabilitiesKHR(*surface_),
-                device.getSurfaceFormatsKHR(*surface_),
-                device.getSurfacePresentModesKHR(*surface_)
+                physicalDevice.getSurfaceCapabilitiesKHR(*surface_),
+                physicalDevice.getSurfaceFormatsKHR(*surface_),
+                physicalDevice.getSurfacePresentModesKHR(*surface_)
             };
     }
 
@@ -445,17 +446,11 @@ private:
         vk::PresentModeKHR   presentMode   = chooseSwapPresentMode(swapChainSupport.presentModes);
         vk::Extent2D         extent        = chooseSwapExtent(swapChainSupport.capabilities);
 
-        uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-        if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-            imageCount = swapChainSupport.capabilities.maxImageCount;
-
         swapChain_ = std::make_shared<Vkx::SwapChain>(*surface_,
-                                                      imageCount,
                                                       surfaceFormat,
                                                       extent,
                                                       graphicsFamily_,
                                                       presentFamily_,
-                                                      swapChainSupport.capabilities,
                                                       presentMode,
                                                       device_);
         framebufferSizeChanged_ = false;
