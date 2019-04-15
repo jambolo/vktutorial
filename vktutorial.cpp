@@ -1,6 +1,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <Glfwx/Glfwx.h>
 #include <Vkx/Buffer.h>
+#include <Vkx/Camera.h>
 #include <Vkx/Image.h>
 #include <Vkx/Instance.h>
 #include <Vkx/SwapChain.h>
@@ -142,9 +143,16 @@ public:
     {
         initializeWindow();
         initializeVulkan();
+
+        Vkx::Camera camera(glm::radians(90.0f),
+                           0.1f,
+                           10.0f,
+                           (float)swapChain_->extent().width / (float)swapChain_->extent().height);
+        camera.lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
         while (!window_->processEvents())
         {
-            drawFrame();
+            drawFrame(camera);
         }
         device_->waitIdle();
     }
@@ -937,7 +945,7 @@ private:
         }
     }
 
-    void drawFrame()
+    void drawFrame(Vkx::Camera const & camera)
     {
         uint32_t swapIndex;
         try
@@ -950,7 +958,7 @@ private:
             return;
         }
 
-        updateUniformBuffer(swapIndex);
+        updateUniformBuffer(camera, swapIndex);
 
         vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo         submitInfo(1,
@@ -980,7 +988,7 @@ private:
         }
     }
 
-    void updateUniformBuffer(int index)
+    void updateUniformBuffer(Vkx::Camera const & camera, int index)
     {
         static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -989,15 +997,8 @@ private:
 
         UniformBufferObject ubo;
         ubo.model      = glm::rotate(glm::mat4(1.0f), time * glm::pi<float>() / 8.0f, glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view       = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.projection = glm::perspective(glm::quarter_pi<float>(),
-                                          swapChain_->extent().width / (float)swapChain_->extent().height,
-                                          0.1f,
-                                          10.0f);
-        // "GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted. The easiest way to
-        // compensate for that is to flip the sign on the scaling factor of the Y axis in the projection matrix. If you don't do
-        // this, then the image will be rendered upside down."
-        ubo.projection[1][1] *= -1;   // This has got to go
+        ubo.view       = camera.view();
+        ubo.projection = camera.projection();
 
         uniformBuffers_[index].set(0, &ubo, sizeof(ubo));
     }
