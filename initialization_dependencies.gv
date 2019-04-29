@@ -1,0 +1,46 @@
+digraph Creation {
+    rankdir=RL
+    { rank=max; instance_; window_; }
+    instance_ [shape=box];
+    window_ [shape=box];
+    dynamicDispatch_ -> instance_;
+    debugMessenger_ -> instance_;
+    surface_ -> { window_; instance_; }
+    physicalDevice_ [shape=box];
+    physicalDevice_ -> { instance_; surface_; }
+    msaa_ -> physicalDevice_;
+    device_ [shape=box];
+    device_ -> physicalDevice_;
+    { rank=same; graphicsFamily_; presentFamily_; }
+    graphicsFamily_ -> physicalDevice_;
+    presentFamily_ -> physicalDevice_;
+    { rank=same; graphicsQueue_; graphicsQueue_; }
+    graphicsQueue_ -> { device_; graphicsFamily_; }
+    presentQueue_ -> { device_; presentFamily_; }
+    swapChain_ [shape=box];
+    swapChain_ -> { window_; graphicsFamily_; presentFamily_; device_; }
+    renderPass_ -> { resolveImage_; depthImage_; swapChain_; }
+    descriptorSetLayout_ /*-> device_;*/;
+    pipelineLayout_ -> { device_; descriptorSetLayout_; }
+    graphicsPipeline_ -> { swapChain_; "shaderModules[]" -> device_; vertexInputInfo; inputAssembly; rasterizerState; msaa_; pipelineLayout_; renderPass_; }
+    graphicsCommandPool_ -> { device_; graphicsFamily_; }
+    transientCommandPool_ -> { device_; graphicsFamily_; }
+    resolveImage_ [shape=box];
+    resolveImage_ -> { swapChain_; device_; transientCommandPool_; graphicsQueue_; msaa_; }
+    depthImage_ [shape=box];
+    depthImage_ -> { swapChain_; device_; transientCommandPool_; graphicsQueue_; msaa_; }
+    "frameBuffers[]" -> { swapChain_; resolveImage_; depthImage_; device_; renderPass_; }
+    textureImage_ [shape=box];
+    textureImage_ -> { device_; transientCommandPool_; graphicsQueue_; }
+    textureSampler_ -> { device_; textureImage_; }
+    { rank=same vertexBuffer_; indexBuffer_; }
+    vertexBuffer_ [shape=box];
+    vertexBuffer_ -> { Mesh; device_; transientCommandPool_; graphicsQueue_; }
+    indexBuffer_ [shape=box];
+    indexBuffer_ -> { Mesh; device_; transientCommandPool_; graphicsQueue_; }
+    "uniformBuffers_[]" [shape=box];
+    "uniformBuffers_[]" -> { swapChain_; device_; }
+    descriptorPool_ -> { swapChain_; device_; }
+    descriptorSet_ -> { swapChain_; descriptorSetLayout_; descriptorPool_; device_; "uniformBuffers_[]"; textureImage_; textureSampler_; }
+    commandBuffer_ -> { swapChain_; device_; graphicsCommandPool_; renderPass_; "frameBuffers[]"; graphicsPipeline_; vertexBuffer_; indexBuffer_; pipelineLayout_; descriptorSet_; }
+}
