@@ -24,7 +24,7 @@ set(VKTUTORIAL_SHADER_SOURCES
 source_group(Shaders FILES ${VKTUTORIAL_SHADER_SOURCES})
 
 add_executable(vktutorial ${VKTUTORIAL_SOURCES})
-target_link_libraries(vktutorial Glfwx Vkx glm Vulkan::Vulkan)
+target_link_libraries(vktutorial Glfwx Vkx glm::glm Vulkan::Vulkan)
 target_compile_definitions(vktutorial
     PRIVATE
         -DNOMINMAX

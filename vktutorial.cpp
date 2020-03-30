@@ -337,7 +337,7 @@ private:
         Glfwx::Window::hint(Glfwx::Hint::eCLIENT_API, Glfwx::eNO_API);
         Glfwx::Window::hint(Glfwx::Hint::eRESIZABLE, Glfwx::eFALSE);
         window_ = std::make_unique<Glfwx::Window>(WIDTH, HEIGHT, "vktutorial");
-        window_->setFramebufferSizeCallback(
+        window_->setFramebufferSizeChangedCallback(
             [this] (Glfwx::Window *, int, int)
             {
                 this->framebufferSizeChanged_ = true;
