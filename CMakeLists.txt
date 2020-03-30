@@ -5,10 +5,18 @@ option(BUILD_SHARED_LIBS "Build libraries as DLLs" FALSE)
 
 find_package(glm REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(Wx REQUIRED)
+find_package(Msxmlx REQUIRED)
+find_package(Misc REQUIRED)
+#find_package(Glfwx REQUIRED)
+#find_package(Vkx REQUIRED)
+
+set(VKTUTORIAL_INCLUDE_PATHS
+    .
+)
 
 set(VKTUTORIAL_SOURCES
-    stb_image.h
-    tiny_obj_loader.h
     vktutorial.cpp
 )
 source_group(Sources FILES ${VKTUTORIAL_SOURCES})
@@ -24,7 +32,16 @@ set(VKTUTORIAL_SHADER_SOURCES
 source_group(Shaders FILES ${VKTUTORIAL_SHADER_SOURCES})
 
 add_executable(vktutorial ${VKTUTORIAL_SOURCES})
-target_link_libraries(vktutorial Glfwx Vkx glm::glm Vulkan::Vulkan)
+target_link_libraries(vktutorial
+    Glfwx
+    Vkx
+    glm::glm
+    Vulkan::Vulkan
+    nlohmann_json::nlohmann_json
+)
+target_include_directories(vktutorial PRIVATE ${VKTUTORIAL_INCLUDE_PATHS})
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_compile_definitions(vktutorial
     PRIVATE
         -DNOMINMAX
@@ -34,9 +51,6 @@ target_compile_definitions(vktutorial
         -D_SECURE_SCL=0
         -D_SCL_SECURE_NO_WARNINGS
 )
-target_include_directories(vktutorial PRIVATE ${VKTUTORIAL_INCLUDE_PATHS})
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
 # Copy the DLLs to next to the executable
 if (WIN32 AND BUILD_SHARED_LIBS)
@@ -75,14 +89,14 @@ add_custom_command(TARGET vktutorial POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/textures"
         "${PROJECT_BINARY_DIR}/textures"
-        )
+)
 
 add_custom_command(TARGET vktutorial POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/models/"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/models"
         "${PROJECT_BINARY_DIR}/models"
-        )
+)
 
 add_subdirectory(Glfwx)
 add_subdirectory(Vkx)
